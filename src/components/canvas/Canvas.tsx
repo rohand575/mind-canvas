@@ -28,7 +28,7 @@ export function Canvas() {
   const textInputRef = useRef<HTMLTextAreaElement>(null);
   const selectionBoxRef = useRef<Bounds | null>(null);
 
-  const { handleWheel, handleKeyDown, handleKeyUp, startPan, movePan, endPan, isSpacePressed } =
+  const { handleWheel, handleKeyDown, handleKeyUp, startPan, startRightClickPan, movePan, endPan, isSpacePressed } =
     useCanvasInteraction();
   const { saveSnapshot } = useHistory();
 
@@ -133,9 +133,16 @@ export function Canvas() {
   // ─── Mouse Down ───────────────────────────────────────────────
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
+      // Right-click: start panning
+      if (e.button === 2) {
+        e.preventDefault();
+        startRightClickPan(e.clientX, e.clientY);
+        return;
+      }
+
       if (e.button !== 0) return; // Left click only
 
-      // Pan takes priority
+      // Pan takes priority (space+drag)
       if (startPan(e.clientX, e.clientY)) return;
 
       const canvasPoint = screenToCanvas(e.clientX, e.clientY);
@@ -450,6 +457,7 @@ export function Canvas() {
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
+        onContextMenu={(e) => e.preventDefault()}
       />
       <textarea
         ref={textInputRef}

@@ -11,9 +11,16 @@ export function useCanvasInteraction() {
 
   const handleWheel = useCallback((e: WheelEvent) => {
     e.preventDefault();
-    const { setZoom, zoom } = useCanvasStore.getState();
-    const delta = -e.deltaY * 0.001;
-    setZoom(zoom * (1 + delta), e.clientX, e.clientY);
+    if (e.ctrlKey || e.metaKey) {
+      // Pinch-to-zoom (trackpad) or Ctrl+scroll: zoom
+      const { setZoom, zoom } = useCanvasStore.getState();
+      const delta = -e.deltaY * 0.01;
+      setZoom(zoom * (1 + delta), e.clientX, e.clientY);
+    } else {
+      // Two-finger trackpad scroll or regular scroll: pan
+      const { offsetX, offsetY, setOffset } = useCanvasStore.getState();
+      setOffset(offsetX - e.deltaX, offsetY - e.deltaY);
+    }
   }, []);
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
@@ -40,6 +47,12 @@ export function useCanvasInteraction() {
     return false;
   }, []);
 
+  const startRightClickPan = useCallback((clientX: number, clientY: number) => {
+    isPanningRef.current = true;
+    lastPos.current = { x: clientX, y: clientY };
+    useCanvasStore.getState().setIsPanning(true);
+  }, []);
+
   const movePan = useCallback((clientX: number, clientY: number): boolean => {
     if (isPanningRef.current) {
       const dx = clientX - lastPos.current.x;
@@ -53,7 +66,10 @@ export function useCanvasInteraction() {
   }, []);
 
   const endPan = useCallback(() => {
-    isPanningRef.current = false;
+    if (isPanningRef.current) {
+      isPanningRef.current = false;
+      useCanvasStore.getState().setIsPanning(false);
+    }
   }, []);
 
   return {
@@ -61,6 +77,7 @@ export function useCanvasInteraction() {
     handleKeyDown,
     handleKeyUp,
     startPan,
+    startRightClickPan,
     movePan,
     endPan,
     isSpacePressed,
