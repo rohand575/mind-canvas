@@ -1,4 +1,3 @@
-import { useState, useCallback } from 'react';
 import { Canvas } from './components/canvas/Canvas';
 import { Toolbar } from './components/toolbar/Toolbar';
 import { ShortcutsDialog } from './components/ui/ShortcutsDialog';
@@ -8,8 +7,9 @@ import { useCanvasStore } from './store/canvasStore';
 
 export default function App() {
   const theme = useCanvasStore((s) => s.theme);
-  const [shortcutsOpen, setShortcutsOpen] = useState(false);
-  const toggleShortcuts = useCallback(() => setShortcutsOpen((v) => !v), []);
+  const shortcutsOpen = useCanvasStore((s) => s.shortcutsOpen);
+  const toggleShortcuts = useCanvasStore((s) => s.toggleShortcuts);
+  const setShortcutsOpen = useCanvasStore((s) => s.setShortcutsOpen);
 
   // Global hooks
   useKeyboardShortcuts(toggleShortcuts);

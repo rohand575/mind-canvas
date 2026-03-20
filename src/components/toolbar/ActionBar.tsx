@@ -16,6 +16,7 @@ import {
   SunIcon,
   MoonIcon,
   GridIcon,
+  HelpIcon,
 } from './ToolIcons';
 
 export function ActionBar() {
@@ -172,6 +173,11 @@ export function ActionBar() {
       <span className="text-xs text-gray-500 dark:text-gray-400 text-center tabular-nums font-medium py-1">
         {Math.round(zoom * 100)}%
       </span>
+
+      <div className="h-px w-full bg-gray-200/80 dark:bg-gray-700/80 my-1.5" />
+      <IconButton title="Keyboard shortcuts (?)" onClick={() => useCanvasStore.getState().toggleShortcuts()}>
+        <HelpIcon />
+      </IconButton>
     </div>
   );
 }

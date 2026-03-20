@@ -571,12 +571,26 @@ export function Canvas() {
   }, [saveSnapshot]);
 
   const { theme } = useCanvasStore();
+  const isEmpty = useElementStore((s) => s.elements.length === 0);
 
   return (
     <div
       ref={containerRef}
       className={`w-full h-full relative overflow-hidden ${theme === 'dark' ? 'dark' : ''}`}
     >
+      {/* Empty state hint */}
+      {isEmpty && (
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
+          <div className="text-center text-gray-400 dark:text-gray-500 select-none">
+            <p className="text-lg font-medium mb-2">Start drawing!</p>
+            <p className="text-sm">
+              Pick a tool from the left, or press{' '}
+              <kbd className="px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 font-mono text-xs">?</kbd>{' '}
+              for shortcuts
+            </p>
+          </div>
+        </div>
+      )}
       <canvas
         ref={canvasRef}
         className="w-full h-full block"

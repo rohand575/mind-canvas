@@ -7,6 +7,7 @@ interface CanvasStore extends CanvasState {
   showGrid: boolean;
   snapToGrid: boolean;
   isPanning: boolean;
+  shortcutsOpen: boolean;
 
   setOffset: (x: number, y: number) => void;
   setZoom: (zoom: number, centerX?: number, centerY?: number) => void;
@@ -19,6 +20,8 @@ interface CanvasStore extends CanvasState {
   toggleSnapToGrid: () => void;
   toggleTheme: () => void;
   setTheme: (theme: Theme) => void;
+  toggleShortcuts: () => void;
+  setShortcutsOpen: (open: boolean) => void;
   loadState: (state: Partial<CanvasState>) => void;
 }
 
@@ -30,6 +33,7 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   showGrid: true,
   snapToGrid: false,
   isPanning: false,
+  shortcutsOpen: false,
 
   setOffset: (x, y) => set({ offsetX: x, offsetY: y }),
 
@@ -81,6 +85,10 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
     set((s) => ({ theme: s.theme === 'light' ? 'dark' : 'light' })),
 
   setTheme: (theme) => set({ theme }),
+
+  toggleShortcuts: () => set((s) => ({ shortcutsOpen: !s.shortcutsOpen })),
+
+  setShortcutsOpen: (open) => set({ shortcutsOpen: open }),
 
   loadState: (state) => set(state),
 }));
