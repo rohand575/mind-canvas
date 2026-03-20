@@ -1,5 +1,5 @@
 import { nanoid } from 'nanoid';
-import type { CanvasElement, ElementType, Point } from '../types';
+import type { CanvasElement, ElementType, Point, StrokeStyle, FillStyle } from '../types';
 import {
   DEFAULT_STROKE_COLOR,
   DEFAULT_FILL_COLOR,
@@ -7,6 +7,9 @@ import {
   DEFAULT_ROUGHNESS,
   DEFAULT_OPACITY,
   DEFAULT_FONT_SIZE,
+  DEFAULT_STROKE_STYLE,
+  DEFAULT_FILL_STYLE,
+  DEFAULT_EDGE_ROUNDNESS,
 } from '../constants';
 
 interface CreateElementOptions {
@@ -21,6 +24,11 @@ interface CreateElementOptions {
   fillColor?: string;
   strokeWidth?: number;
   roughness?: number;
+  opacity?: number;
+  fontSize?: number;
+  strokeStyle?: StrokeStyle;
+  fillStyle?: FillStyle;
+  edgeRoundness?: number;
   zIndex?: number;
 }
 
@@ -35,12 +43,15 @@ export function createElement(options: CreateElementOptions): CanvasElement {
     height: options.height ?? 0,
     points: options.points,
     text: options.text,
-    fontSize: options.type === 'text' ? DEFAULT_FONT_SIZE : undefined,
+    fontSize: options.type === 'text' ? (options.fontSize ?? DEFAULT_FONT_SIZE) : undefined,
     strokeColor: options.strokeColor ?? DEFAULT_STROKE_COLOR,
     fillColor: options.fillColor ?? DEFAULT_FILL_COLOR,
     strokeWidth: options.strokeWidth ?? DEFAULT_STROKE_WIDTH,
     roughness: options.roughness ?? DEFAULT_ROUGHNESS,
-    opacity: DEFAULT_OPACITY,
+    opacity: options.opacity ?? DEFAULT_OPACITY,
+    strokeStyle: options.strokeStyle ?? DEFAULT_STROKE_STYLE,
+    fillStyle: options.fillStyle ?? DEFAULT_FILL_STYLE,
+    edgeRoundness: options.edgeRoundness ?? DEFAULT_EDGE_ROUNDNESS,
     rotation: 0,
     zIndex: options.zIndex ?? 0,
     createdAt: now,

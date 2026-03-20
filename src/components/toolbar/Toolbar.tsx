@@ -3,17 +3,39 @@ import { StylePanel } from './StylePanel';
 import { ActionBar } from './ActionBar';
 
 /**
- * Floating toolbar at the top of the canvas.
- * Split into three sections: tools, styles, and actions.
+ * Floating toolbar layout:
+ * - Tools: vertical bar on the left
+ * - Styles: horizontal bar at top center
+ * - Actions: vertical bar on the right
  */
 export function Toolbar() {
+  const panelClasses = `
+    bg-white/80 dark:bg-gray-900/80 
+    backdrop-blur-xl 
+    rounded-2xl 
+    shadow-xl shadow-black/10 dark:shadow-black/30
+    border border-gray-200/50 dark:border-gray-700/50
+    transition-all duration-200
+    hover:bg-white/95 dark:hover:bg-gray-900/95
+    hover:shadow-2xl hover:shadow-black/15 dark:hover:shadow-black/40
+  `;
+
   return (
-    <div className="absolute top-3 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 px-3 py-2 bg-white/90 dark:bg-gray-800/90 backdrop-blur-md rounded-xl shadow-lg border border-gray-200/80 dark:border-gray-700/80">
-      <ToolSelector />
-      <div className="w-px h-7 bg-gray-200 dark:bg-gray-600" />
-      <StylePanel />
-      <div className="w-px h-7 bg-gray-200 dark:bg-gray-600" />
-      <ActionBar />
-    </div>
+    <>
+      {/* Tools - Left side vertical */}
+      <div className={`absolute left-4 top-1/2 -translate-y-1/2 z-40 flex flex-col gap-1.5 p-3 ${panelClasses}`}>
+        <ToolSelector />
+      </div>
+
+      {/* Styles - Top center horizontal */}
+      <div className={`absolute top-4 left-1/2 -translate-x-1/2 z-40 flex items-center p-3 ${panelClasses}`}>
+        <StylePanel />
+      </div>
+
+      {/* Actions - Right side vertical */}
+      <div className={`absolute right-4 top-1/2 -translate-y-1/2 z-40 flex flex-col gap-1.5 p-3 ${panelClasses}`}>
+        <ActionBar />
+      </div>
+    </>
   );
 }

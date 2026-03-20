@@ -3,7 +3,7 @@
  * with individual icon files or adding an icon library dependency.
  */
 
-const iconClass = "w-[18px] h-[18px]";
+const iconClass = "w-5 h-5";
 
 export function CursorIcon() {
   return (
@@ -61,6 +61,25 @@ export function TextIcon() {
       <polyline points="4 7 4 4 20 4 20 7" />
       <line x1="9" y1="20" x2="15" y2="20" />
       <line x1="12" y1="4" x2="12" y2="20" />
+    </svg>
+  );
+}
+
+export function DiamondIcon() {
+  return (
+    <svg className={iconClass} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 2 L22 12 L12 22 L2 12 Z" />
+    </svg>
+  );
+}
+
+export function HandIcon() {
+  return (
+    <svg className={iconClass} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M18 11V6a2 2 0 0 0-4 0v1" />
+      <path d="M14 10V4a2 2 0 0 0-4 0v2" />
+      <path d="M10 10.5V6a2 2 0 0 0-4 0v8" />
+      <path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.9-5.9-2.7L3.7 16A2 2 0 0 1 6.3 13l1.7 2" />
     </svg>
   );
 }
@@ -131,9 +150,51 @@ export function GridIcon() {
   );
 }
 
+export function BringForwardIcon() {
+  return (
+    <svg className={iconClass} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="8" y="8" width="13" height="13" rx="2" fill="currentColor" opacity="0.15" />
+      <rect x="3" y="3" width="13" height="13" rx="2" />
+    </svg>
+  );
+}
+
+export function SendBackwardIcon() {
+  return (
+    <svg className={iconClass} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="3" width="13" height="13" rx="2" fill="currentColor" opacity="0.15" />
+      <rect x="8" y="8" width="13" height="13" rx="2" />
+    </svg>
+  );
+}
+
+export function UploadIcon() {
+  return (
+    <svg className={iconClass} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+      <polyline points="17 8 12 3 7 8" />
+      <line x1="12" y1="3" x2="12" y2="15" />
+    </svg>
+  );
+}
+
+export function ClearIcon() {
+  return (
+    <svg className={iconClass} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 6h18" />
+      <path d="M8 6V4h8v2" />
+      <path d="M5 6l1 14a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-14" />
+      <line x1="10" y1="11" x2="10" y2="17" />
+      <line x1="14" y1="11" x2="14" y2="17" />
+    </svg>
+  );
+}
+
 export const TOOL_ICON_MAP: Record<string, () => React.JSX.Element> = {
   cursor: CursorIcon,
+  hand: HandIcon,
   square: SquareIcon,
+  diamond: DiamondIcon,
   circle: CircleIcon,
   line: LineIcon,
   arrow: ArrowIcon,

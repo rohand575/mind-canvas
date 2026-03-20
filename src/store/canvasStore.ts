@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { CanvasState, Theme } from '../types';
+import type { CanvasState, Theme, Bounds } from '../types';
 import { DEFAULT_ZOOM, MIN_ZOOM, MAX_ZOOM } from '../constants';
 
 interface CanvasStore extends CanvasState {
@@ -13,6 +13,7 @@ interface CanvasStore extends CanvasState {
   zoomIn: (centerX?: number, centerY?: number) => void;
   zoomOut: (centerX?: number, centerY?: number) => void;
   resetView: () => void;
+  zoomToBounds: (bounds: Bounds, viewportWidth: number, viewportHeight: number, padding?: number) => void;
   setIsPanning: (val: boolean) => void;
   toggleGrid: () => void;
   toggleSnapToGrid: () => void;
@@ -59,6 +60,16 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
   },
 
   resetView: () => set({ offsetX: 0, offsetY: 0, zoom: DEFAULT_ZOOM }),
+
+  zoomToBounds: (bounds, viewportWidth, viewportHeight, padding = 60) => {
+    if (bounds.width <= 0 || bounds.height <= 0) return;
+    const zoomX = (viewportWidth - padding * 2) / bounds.width;
+    const zoomY = (viewportHeight - padding * 2) / bounds.height;
+    const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, Math.min(zoomX, zoomY)));
+    const offsetX = (viewportWidth - bounds.width * newZoom) / 2 - bounds.x * newZoom;
+    const offsetY = (viewportHeight - bounds.height * newZoom) / 2 - bounds.y * newZoom;
+    set({ zoom: newZoom, offsetX, offsetY });
+  },
 
   setIsPanning: (val) => set({ isPanning: val }),
 

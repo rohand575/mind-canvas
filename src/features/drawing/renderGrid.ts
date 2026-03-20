@@ -13,7 +13,7 @@ export function renderGrid(
   isDark: boolean,
 ) {
   const scaledGrid = GRID_SIZE * zoom;
-  if (scaledGrid < 5) return; // Don't render if grid is too small
+  if (scaledGrid < 2) return; // Don't render if grid is too small
 
   const startX = (offsetX % scaledGrid);
   const startY = (offsetY % scaledGrid);

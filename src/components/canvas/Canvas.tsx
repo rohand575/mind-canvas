@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback } from 'react';
+import { useRef, useEffect, useCallback, useState } from 'react';
 import rough from 'roughjs';
 import { useCanvasStore } from '../../store/canvasStore';
 import { useElementStore } from '../../store/elementStore';
@@ -10,7 +10,18 @@ import { renderGrid } from '../../features/drawing/renderGrid';
 import { renderSelection, renderSelectionBox } from '../../features/selection/renderSelection';
 import { hitTestElement, getResizeHandleAtPoint, normalizeBounds, getElementBounds, boundsOverlap } from '../../utils/geometry';
 import { createElement } from '../../utils/createElement';
+import { GRID_SIZE } from '../../constants';
+import { ContextMenu } from './ContextMenu';
 import type { CanvasElement, Point, ResizeHandle, Bounds } from '../../types';
+
+function snapToGridValue(val: number, gridSize: number): number {
+  return Math.round(val / gridSize) * gridSize;
+}
+
+function snapPoint(p: Point, snap: boolean): Point {
+  if (!snap) return p;
+  return { x: snapToGridValue(p.x, GRID_SIZE), y: snapToGridValue(p.y, GRID_SIZE) };
+}
 
 type InteractionMode =
   | { type: 'none' }
@@ -27,6 +38,7 @@ export function Canvas() {
   const rafRef = useRef<number>(0);
   const textInputRef = useRef<HTMLTextAreaElement>(null);
   const selectionBoxRef = useRef<Bounds | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
 
   const { handleWheel, handleKeyDown, handleKeyUp, startPan, startRightClickPan, movePan, endPan, isSpacePressed } =
     useCanvasInteraction();
@@ -133,21 +145,43 @@ export function Canvas() {
   // ─── Mouse Down ───────────────────────────────────────────────
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
-      // Right-click: start panning
+      // Right-click: show context menu if elements selected, otherwise pan
       if (e.button === 2) {
         e.preventDefault();
-        startRightClickPan(e.clientX, e.clientY);
+        const canvasPoint = screenToCanvas(e.clientX, e.clientY);
+        const { selectedIds } = useToolStore.getState();
+        const { elements } = useElementStore.getState();
+        const sortedDesc = [...elements].sort((a, b) => b.zIndex - a.zIndex);
+        const hitElement = sortedDesc.find((el) => hitTestElement(canvasPoint, el));
+        if (hitElement || selectedIds.length > 0) {
+          if (hitElement && !selectedIds.includes(hitElement.id)) {
+            useToolStore.getState().setSelectedIds([hitElement.id]);
+          }
+          setContextMenu({ x: e.clientX, y: e.clientY });
+        } else {
+          startRightClickPan(e.clientX, e.clientY);
+        }
         return;
       }
 
       if (e.button !== 0) return; // Left click only
 
+      // Close context menu on left click
+      if (contextMenu) setContextMenu(null);
+
+      const { activeTool, selectedIds, setSelectedIds, clearSelection, strokeColor, fillColor, strokeWidth, roughness, opacity, fontSize, strokeStyle, fillStyle, edgeRoundness } = useToolStore.getState();
+
+      // Hand tool: always pan
+      if (activeTool === 'hand') {
+        startRightClickPan(e.clientX, e.clientY);
+        return;
+      }
+
       // Pan takes priority (space+drag)
       if (startPan(e.clientX, e.clientY)) return;
 
       const canvasPoint = screenToCanvas(e.clientX, e.clientY);
-      const { activeTool, selectedIds, setSelectedIds, clearSelection, strokeColor, fillColor, strokeWidth, roughness } = useToolStore.getState();
-      const { elements, addElement, getMaxZIndex, updateElement } = useElementStore.getState();
+      const { elements, addElement, getMaxZIndex } = useElementStore.getState();
 
       if (activeTool === 'select') {
         // Check if clicking on a resize handle of selected element
@@ -214,23 +248,32 @@ export function Canvas() {
           };
         }
       } else if (activeTool === 'text') {
+        // Prevent canvas from stealing focus from the textarea
+        e.preventDefault();
         // Show text input at click position
         interactionRef.current = { type: 'text-input' };
         showTextInput(canvasPoint);
       } else {
         // Drawing mode
         saveSnapshot();
+        const snap = useCanvasStore.getState().snapToGrid;
+        const drawPoint = activeTool === 'freehand' ? canvasPoint : snapPoint(canvasPoint, snap);
         const newZ = getMaxZIndex() + 1;
         const isLinear = activeTool === 'line' || activeTool === 'arrow' || activeTool === 'freehand';
 
         const newElement = createElement({
-          type: activeTool,
-          x: canvasPoint.x,
-          y: canvasPoint.y,
+          type: activeTool as import('../../types').ElementType,
+          x: drawPoint.x,
+          y: drawPoint.y,
           strokeColor,
           fillColor,
           strokeWidth,
           roughness,
+          opacity,
+          fontSize,
+          strokeStyle,
+          fillStyle,
+          edgeRoundness,
           zIndex: newZ,
           points: isLinear ? [{ x: 0, y: 0 }] : undefined,
         });
@@ -239,7 +282,7 @@ export function Canvas() {
         interactionRef.current = { type: 'drawing', element: newElement };
       }
     },
-    [startPan, screenToCanvas, saveSnapshot],
+    [startPan, startRightClickPan, screenToCanvas, saveSnapshot, contextMenu],
   );
 
   // ─── Mouse Move ───────────────────────────────────────────────
@@ -247,36 +290,40 @@ export function Canvas() {
     (e: React.MouseEvent) => {
       if (movePan(e.clientX, e.clientY)) return;
 
-      const canvasPoint = screenToCanvas(e.clientX, e.clientY);
+      const rawCanvasPoint = screenToCanvas(e.clientX, e.clientY);
+      const snap = useCanvasStore.getState().snapToGrid;
+      const canvasPoint = rawCanvasPoint;
       const interaction = interactionRef.current;
       const { updateElement } = useElementStore.getState();
 
       if (interaction.type === 'drawing') {
         const el = interaction.element;
+        const snappedPoint = snapPoint(rawCanvasPoint, snap);
         if (el.type === 'freehand') {
-          // Add point to freehand path
+          // Add point to freehand path (no snapping for freehand)
           const elements = useElementStore.getState().elements;
           const current = elements.find((e) => e.id === el.id);
           if (current) {
-            const newPoint = { x: canvasPoint.x - el.x, y: canvasPoint.y - el.y };
+            const newPoint = { x: rawCanvasPoint.x - el.x, y: rawCanvasPoint.y - el.y };
             updateElement(el.id, { points: [...(current.points ?? []), newPoint] });
           }
         } else if (el.type === 'line' || el.type === 'arrow') {
           // Update end point
-          const endPoint = { x: canvasPoint.x - el.x, y: canvasPoint.y - el.y };
+          const endPoint = { x: snappedPoint.x - el.x, y: snappedPoint.y - el.y };
           updateElement(el.id, { points: [{ x: 0, y: 0 }, endPoint] });
         } else {
           // Update width/height for shapes
           updateElement(el.id, {
-            width: canvasPoint.x - el.x,
-            height: canvasPoint.y - el.y,
+            width: snappedPoint.x - el.x,
+            height: snappedPoint.y - el.y,
           });
         }
       } else if (interaction.type === 'moving') {
-        const dx = canvasPoint.x - interaction.startX;
-        const dy = canvasPoint.y - interaction.startY;
+        const dx = rawCanvasPoint.x - interaction.startX;
+        const dy = rawCanvasPoint.y - interaction.startY;
         for (const [id, orig] of interaction.originals) {
-          updateElement(id, { x: orig.x + dx, y: orig.y + dy });
+          const newPos = snapPoint({ x: orig.x + dx, y: orig.y + dy }, snap);
+          updateElement(id, { x: newPos.x, y: newPos.y });
         }
       } else if (interaction.type === 'resizing') {
         const { elementId, handle, startX, startY, original } = interaction;
@@ -316,7 +363,7 @@ export function Canvas() {
     if (interaction.type === 'drawing') {
       // Normalize negative dimensions for shapes
       const el = interaction.element;
-      if (el.type === 'rectangle' || el.type === 'ellipse') {
+      if (el.type === 'rectangle' || el.type === 'ellipse' || el.type === 'diamond') {
         const { elements } = useElementStore.getState();
         const current = elements.find((e) => e.id === el.id);
         if (current) {
@@ -324,8 +371,11 @@ export function Canvas() {
           useElementStore.getState().updateElement(el.id, normalized);
         }
       }
-      // Switch back to select after drawing
-      useToolStore.getState().setActiveTool('select');
+      // Switch back to select after drawing (unless lock mode)
+      const { lockToolMode } = useToolStore.getState();
+      if (!lockToolMode) {
+        useToolStore.getState().setActiveTool('select');
+      }
       useToolStore.getState().setSelectedIds([el.id]);
     } else if (interaction.type === 'selecting' && selectionBoxRef.current) {
       // Select all elements inside selection box
@@ -342,15 +392,15 @@ export function Canvas() {
   }, [endPan]);
 
   // ─── Cursor Management ────────────────────────────────────────
-  const updateCursor = useCallback((canvasPoint: Point, e: React.MouseEvent) => {
+  const updateCursor = useCallback((canvasPoint: Point, _e: React.MouseEvent) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
     const { activeTool, selectedIds } = useToolStore.getState();
     const { isPanning } = useCanvasStore.getState();
 
-    if (isPanning || isSpacePressed.current) {
-      canvas.style.cursor = 'grab';
+    if (activeTool === 'hand' || isPanning || isSpacePressed.current) {
+      canvas.style.cursor = isPanning ? 'grabbing' : 'grab';
       return;
     }
 
@@ -384,16 +434,85 @@ export function Canvas() {
     canvas.style.cursor = hovered ? 'move' : 'default';
   }, [isSpacePressed]);
 
+  // ─── Double-Click (edit existing text) ─────────────────────────
+  const handleDoubleClick = useCallback(
+    (e: React.MouseEvent) => {
+      const canvasPoint = screenToCanvas(e.clientX, e.clientY);
+      const { elements } = useElementStore.getState();
+      const sortedDesc = [...elements].sort((a, b) => b.zIndex - a.zIndex);
+      const hitElement = sortedDesc.find((el) => el.type === 'text' && hitTestElement(canvasPoint, el));
+      if (hitElement) {
+        e.preventDefault();
+        interactionRef.current = { type: 'text-input' };
+        showTextInputForEdit(hitElement);
+      }
+    },
+    [screenToCanvas],
+  );
+
+  // ─── Edit existing text element ───────────────────────────────
+  const showTextInputForEdit = useCallback((element: CanvasElement) => {
+    const { offsetX, offsetY, zoom } = useCanvasStore.getState();
+    const textarea = textInputRef.current;
+    if (!textarea) return;
+
+    textarea.style.display = 'block';
+    textarea.style.left = (element.x * zoom + offsetX) + 'px';
+    textarea.style.top = (element.y * zoom + offsetY) + 'px';
+    textarea.style.fontSize = ((element.fontSize ?? 40) * zoom) + 'px';
+    textarea.value = element.text ?? '';
+    textarea.focus();
+    textarea.select();
+
+    const finishEdit = () => {
+      const text = textarea.value.trim();
+      saveSnapshot();
+      if (text) {
+        const updates: Partial<CanvasElement> = { text };
+        const canvas = canvasRef.current;
+        if (canvas) {
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.font = `${element.fontSize ?? 40}px 'Virgil', 'Segoe Print', 'Comic Sans MS', cursive`;
+            const lines = text.split('\n');
+            const maxWidth = Math.max(...lines.map((l) => ctx.measureText(l).width));
+            updates.width = maxWidth;
+            updates.height = lines.length * 26;
+          }
+        }
+        useElementStore.getState().updateElement(element.id, updates);
+      } else {
+        useElementStore.getState().removeElements([element.id]);
+      }
+      textarea.style.display = 'none';
+      interactionRef.current = { type: 'none' };
+      textarea.removeEventListener('blur', finishEdit);
+    };
+
+    (textarea as any).__cleanupKeydown?.();
+    textarea.addEventListener('blur', finishEdit);
+    const handleEditKeydown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        textarea.blur(); // Save edits and close (don't revert)
+      }
+    };
+    textarea.addEventListener('keydown', handleEditKeydown);
+    (textarea as any).__cleanupKeydown = () => {
+      textarea.removeEventListener('keydown', handleEditKeydown);
+    };
+  }, [saveSnapshot]);
+
   // ─── Text Input ───────────────────────────────────────────────
   const showTextInput = useCallback((canvasPoint: Point) => {
     const { offsetX, offsetY, zoom } = useCanvasStore.getState();
+    const { fontSize: currentFontSize } = useToolStore.getState();
     const textarea = textInputRef.current;
     if (!textarea) return;
 
     textarea.style.display = 'block';
     textarea.style.left = (canvasPoint.x * zoom + offsetX) + 'px';
     textarea.style.top = (canvasPoint.y * zoom + offsetY) + 'px';
-    textarea.style.fontSize = (20 * zoom) + 'px';
+    textarea.style.fontSize = (currentFontSize * zoom) + 'px';
     textarea.value = '';
     textarea.focus();
 
@@ -401,7 +520,7 @@ export function Canvas() {
       const text = textarea.value.trim();
       if (text) {
         saveSnapshot();
-        const { strokeColor, strokeWidth, roughness } = useToolStore.getState();
+        const { strokeColor, strokeWidth, roughness, opacity, fontSize } = useToolStore.getState();
         const newElement = createElement({
           type: 'text',
           x: canvasPoint.x,
@@ -410,6 +529,8 @@ export function Canvas() {
           strokeColor,
           strokeWidth,
           roughness,
+          opacity,
+          fontSize,
           zIndex: useElementStore.getState().getMaxZIndex() + 1,
         });
         // Measure text width/height
@@ -417,11 +538,11 @@ export function Canvas() {
         if (canvas) {
           const ctx = canvas.getContext('2d');
           if (ctx) {
-            ctx.font = `${20}px 'Virgil', 'Segoe Print', 'Comic Sans MS', cursive`;
+            ctx.font = `${fontSize}px 'Virgil', 'Segoe Print', 'Comic Sans MS', cursive`;
             const lines = text.split('\n');
             const maxWidth = Math.max(...lines.map((l) => ctx.measureText(l).width));
             newElement.width = maxWidth;
-            newElement.height = lines.length * 26;
+            newElement.height = lines.length * Math.round(fontSize * 1.3);
           }
         }
         useElementStore.getState().addElement(newElement);
@@ -433,14 +554,20 @@ export function Canvas() {
       textarea.removeEventListener('blur', finishText);
     };
 
+    // Clean up previous keydown listener before adding a new one
+    (textarea as any).__cleanupKeydown?.();
+
     textarea.addEventListener('blur', finishText);
-    textarea.addEventListener('keydown', (e: KeyboardEvent) => {
+    const handleTextKeydown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        textarea.value = '';
-        textarea.blur();
+        textarea.blur(); // Save text and close (don't clear)
       }
-      // Allow Enter for newlines, Shift+Enter or just blur to confirm
-    });
+      // Allow Enter for newlines, just blur to confirm
+    };
+    textarea.addEventListener('keydown', handleTextKeydown);
+    (textarea as any).__cleanupKeydown = () => {
+      textarea.removeEventListener('keydown', handleTextKeydown);
+    };
   }, [saveSnapshot]);
 
   const { theme } = useCanvasStore();
@@ -448,7 +575,7 @@ export function Canvas() {
   return (
     <div
       ref={containerRef}
-      className={`w-full h-full relative ${theme === 'dark' ? 'dark' : ''}`}
+      className={`w-full h-full relative overflow-hidden ${theme === 'dark' ? 'dark' : ''}`}
     >
       <canvas
         ref={canvasRef}
@@ -457,19 +584,54 @@ export function Canvas() {
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseUp}
+        onDoubleClick={handleDoubleClick}
         onContextMenu={(e) => e.preventDefault()}
       />
       <textarea
         ref={textInputRef}
-        className="absolute hidden p-0 m-0 border-none outline-none bg-transparent resize-none overflow-hidden text-gray-900 dark:text-gray-100"
+        className="absolute hidden p-0 m-0 border-none outline-none bg-transparent resize-none text-gray-900 dark:text-gray-100"
         style={{
           fontFamily: "'Virgil', 'Segoe Print', 'Comic Sans MS', cursive",
-          minWidth: '100px',
-          minHeight: '30px',
+          minWidth: '20px',
+          minHeight: '1.5em',
           lineHeight: 1.3,
+          whiteSpace: 'pre',
         }}
-        rows={1}
+        onInput={(e) => {
+          const ta = e.currentTarget;
+          // Auto-grow height
+          ta.style.height = 'auto';
+          ta.style.height = ta.scrollHeight + 'px';
+          // Auto-grow width based on content
+          const lines = ta.value.split('\n');
+          const canvas = canvasRef.current;
+          if (canvas) {
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+              ctx.font = ta.style.fontSize + " 'Virgil', 'Segoe Print', 'Comic Sans MS', cursive";
+              const maxWidth = Math.max(20, ...lines.map(line => ctx.measureText(line || ' ').width));
+              ta.style.width = (maxWidth + 20) + 'px';
+              
+              // Auto-pan canvas if text extends near edge
+              const taRight = parseFloat(ta.style.left) + maxWidth + 20;
+              const screenRight = window.innerWidth - 80; // Leave space for right toolbar
+              if (taRight > screenRight) {
+                const panAmount = taRight - screenRight + 50;
+                const { offsetX, offsetY } = useCanvasStore.getState();
+                useCanvasStore.getState().setOffset(offsetX - panAmount, offsetY);
+                ta.style.left = (parseFloat(ta.style.left) - panAmount) + 'px';
+              }
+            }
+          }
+        }}
       />
+      {contextMenu && (
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          onClose={() => setContextMenu(null)}
+        />
+      )}
     </div>
   );
 }

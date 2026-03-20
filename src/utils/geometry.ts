@@ -71,6 +71,24 @@ export function hitTestElement(point: Point, element: CanvasElement, tolerance =
     return false;
   }
 
+  // Diamond hit test
+  if (element.type === 'diamond') {
+    const cx = element.x + element.width / 2;
+    const cy = element.y + element.height / 2;
+    const hw = Math.abs(element.width) / 2;
+    const hh = Math.abs(element.height) / 2;
+    if (hw === 0 || hh === 0) return false;
+    // Point-in-diamond: |px - cx| / hw + |py - cy| / hh <= 1
+    const dist = Math.abs(point.x - cx) / (hw + tolerance) + Math.abs(point.y - cy) / (hh + tolerance);
+    if (element.fillColor !== 'transparent') {
+      return dist <= 1;
+    }
+    // For non-filled diamond, check if near border
+    const innerDist = Math.abs(point.x - cx) / Math.max(1, hw - tolerance - element.strokeWidth) +
+                      Math.abs(point.y - cy) / Math.max(1, hh - tolerance - element.strokeWidth);
+    return dist <= 1 && innerDist >= 1;
+  }
+
   // For filled shapes, check if inside bounds
   if (element.fillColor !== 'transparent') {
     return isPointInBounds(point, bounds, tolerance);

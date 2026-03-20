@@ -14,7 +14,7 @@ export function useCanvasInteraction() {
     if (e.ctrlKey || e.metaKey) {
       // Pinch-to-zoom (trackpad) or Ctrl+scroll: zoom
       const { setZoom, zoom } = useCanvasStore.getState();
-      const delta = -e.deltaY * 0.01;
+      const delta = -e.deltaY * 0.002; // Smooth zoom
       setZoom(zoom * (1 + delta), e.clientX, e.clientY);
     } else {
       // Two-finger trackpad scroll or regular scroll: pan

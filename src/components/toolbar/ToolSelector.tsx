@@ -7,7 +7,7 @@ export function ToolSelector() {
   const { activeTool, setActiveTool } = useToolStore();
 
   return (
-    <div className="flex items-center gap-0.5">
+    <div className="flex flex-col gap-1">
       {TOOLS.map((tool) => {
         const Icon = TOOL_ICON_MAP[tool.icon];
         return (

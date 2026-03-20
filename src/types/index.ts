@@ -1,8 +1,12 @@
 // ─── Element Types ───────────────────────────────────────────────
 
-export type ElementType = 'rectangle' | 'ellipse' | 'line' | 'arrow' | 'freehand' | 'text';
+export type ElementType = 'rectangle' | 'diamond' | 'ellipse' | 'line' | 'arrow' | 'freehand' | 'text';
 
-export type Tool = 'select' | ElementType;
+export type StrokeStyle = 'solid' | 'dashed' | 'dotted';
+
+export type FillStyle = 'solid' | 'hachure' | 'cross-hatch';
+
+export type Tool = 'select' | 'hand' | ElementType;
 
 export interface Point {
   x: number;
@@ -34,6 +38,9 @@ export interface CanvasElement {
   strokeWidth: number;
   roughness: number;
   opacity: number;
+  strokeStyle: StrokeStyle;
+  fillStyle: FillStyle;
+  edgeRoundness: number;
   // Transform
   rotation: number;
   // Layering
@@ -69,7 +76,7 @@ export type Theme = 'light' | 'dark';
 // ─── Export ──────────────────────────────────────────────────────
 
 export interface ExportOptions {
-  format: 'png' | 'json';
+  format: 'png' | 'json' | 'svg';
   background: boolean;
   padding: number;
 }
