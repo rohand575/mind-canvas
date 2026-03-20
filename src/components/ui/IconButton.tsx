@@ -1,3 +1,5 @@
+import { Tooltip } from './Tooltip';
+
 interface IconButtonProps {
   active?: boolean;
   title?: string;
@@ -7,9 +9,8 @@ interface IconButtonProps {
 }
 
 export function IconButton({ active, title, onClick, children, className = '' }: IconButtonProps) {
-  return (
+  const button = (
     <button
-      title={title}
       onClick={onClick}
       className={`
         flex items-center justify-center w-11 h-11 rounded-xl transition-all duration-200
@@ -24,4 +25,9 @@ export function IconButton({ active, title, onClick, children, className = '' }:
       {children}
     </button>
   );
+
+  if (title) {
+    return <Tooltip content={title} position="left">{button}</Tooltip>;
+  }
+  return button;
 }

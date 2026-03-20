@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useToolStore } from '../../store/toolStore';
 import { useElementStore } from '../../store/elementStore';
 import { useHistory } from '../../hooks/useHistory';
@@ -12,6 +12,25 @@ interface ContextMenuProps {
 export function ContextMenu({ x, y, onClose }: ContextMenuProps) {
   const menuRef = useRef<HTMLDivElement>(null);
   const { saveSnapshot } = useHistory();
+
+  // Bounds checking - adjust position if menu would overflow viewport
+  const [position, setPosition] = useState({ x, y });
+  useEffect(() => {
+    if (!menuRef.current) return;
+    const rect = menuRef.current.getBoundingClientRect();
+    const padding = 8;
+    let newX = x;
+    let newY = y;
+    if (x + rect.width > window.innerWidth - padding) {
+      newX = window.innerWidth - rect.width - padding;
+    }
+    if (y + rect.height > window.innerHeight - padding) {
+      newY = window.innerHeight - rect.height - padding;
+    }
+    if (newX !== x || newY !== y) {
+      setPosition({ x: newX, y: newY });
+    }
+  }, [x, y]);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -115,8 +134,8 @@ export function ContextMenu({ x, y, onClose }: ContextMenuProps) {
   return (
     <div
       ref={menuRef}
-      className="fixed bg-white/95 dark:bg-gray-800/95 backdrop-blur-xl rounded-xl shadow-xl border border-gray-200/50 dark:border-gray-700/50 py-1.5 min-w-[200px] z-[100]"
-      style={{ left: x, top: y }}
+      className="fixed bg-white/95 dark:bg-gray-800/95 backdrop-blur-xl rounded-xl shadow-xl border border-gray-200/50 dark:border-gray-700/50 py-1.5 min-w-[200px] z-[100] animate-in fade-in zoom-in-95"
+      style={{ left: position.x, top: position.y }}
     >
       {selectedIds.length > 0 && (
         <>

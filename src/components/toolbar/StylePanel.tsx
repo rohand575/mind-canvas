@@ -32,15 +32,15 @@ function Popover({
   return (
     <div ref={ref} className="relative">
       <div onClick={() => setOpen(!open)}>{trigger}</div>
-      {open && (
-        <div
-          className={`absolute top-full mt-2.5 bg-white/95 dark:bg-gray-800/95 backdrop-blur-xl rounded-xl shadow-2xl shadow-black/12 dark:shadow-black/40 border border-gray-200/70 dark:border-gray-700/50 p-3 z-50 min-w-max ${
-            align === 'center' ? 'left-1/2 -translate-x-1/2' : 'left-0'
-          }`}
-        >
-          {children}
-        </div>
-      )}
+      <div
+        className={`absolute top-full mt-2.5 bg-white/95 dark:bg-gray-800/95 backdrop-blur-xl rounded-xl shadow-2xl shadow-black/12 dark:shadow-black/40 border border-gray-200/70 dark:border-gray-700/50 p-3 z-50 min-w-max
+          transition-all duration-200 ease-out origin-top
+          ${open ? 'opacity-100 scale-100 translate-y-0' : 'opacity-0 scale-95 -translate-y-1 pointer-events-none'}
+          ${align === 'center' ? 'left-1/2 -translate-x-1/2' : 'left-0'}
+        `}
+      >
+        {children}
+      </div>
     </div>
   );
 }
