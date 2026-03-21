@@ -39,6 +39,7 @@ export function Canvas() {
   const textInputRef = useRef<HTMLTextAreaElement>(null);
   const textPositionRef = useRef<Point | null>(null);
   const selectionBoxRef = useRef<Bounds | null>(null);
+  const editingElementIdRef = useRef<string | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
 
   const { handleWheel, handleKeyDown, handleKeyUp, startPan, startRightClickPan, movePan, endPan, isSpacePressed } =
@@ -96,6 +97,7 @@ export function Canvas() {
     const rc = rough.canvas(canvas);
     const sorted = [...elements].sort((a, b) => a.zIndex - b.zIndex);
     for (const element of sorted) {
+      if (element.id === editingElementIdRef.current) continue;
       renderElement(rc, ctx, element);
     }
 
@@ -177,7 +179,6 @@ export function Canvas() {
         }
       }
       useElementStore.getState().addElement(newElement);
-      useToolStore.getState().setSelectedIds([newElement.id]);
     }
     textarea.style.display = 'none';
     textarea.value = '';
@@ -462,7 +463,6 @@ export function Canvas() {
       if (!lockToolMode) {
         useToolStore.getState().setActiveTool('select');
       }
-      useToolStore.getState().setSelectedIds([el.id]);
     } else if (interaction.type === 'resizing' && interaction.elementType === 'text') {
       // Recalculate text dimensions based on new fontSize
       const { elements } = useElementStore.getState();
@@ -544,6 +544,8 @@ export function Canvas() {
     const textarea = textInputRef.current;
     if (!textarea) return;
 
+    editingElementIdRef.current = element.id;
+
     textarea.style.display = 'block';
     textarea.style.left = (element.x * zoom + offsetX) + 'px';
     textarea.style.top = (element.y * zoom + offsetY) + 'px';
@@ -617,6 +619,7 @@ export function Canvas() {
         useElementStore.getState().removeElements([element.id]);
       }
       textarea.style.display = 'none';
+      editingElementIdRef.current = null;
       interactionRef.current = { type: 'none' };
       // Cleanup listeners
       (textarea as any).__cleanupBlur?.();
@@ -717,7 +720,7 @@ export function Canvas() {
         if (!lockToolMode) {
           useToolStore.getState().setActiveTool('select');
         }
-        useToolStore.getState().setSelectedIds([newElement.id]);
+
       }
       textarea.style.display = 'none';
       textarea.value = '';

@@ -79,31 +79,45 @@ export function ShortcutsDialog({ open, onClose }: ShortcutsDialogProps) {
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center" onClick={onClose}>
-      <div className="absolute inset-0 bg-black/30 backdrop-blur-md" />
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-md" />
       <div
-        className="relative bg-white dark:bg-gray-900 rounded-xl shadow-xl shadow-black/[0.08] dark:shadow-black/30 ring-1 ring-gray-950/[0.05] dark:ring-white/[0.08] p-8 max-w-2xl w-full mx-4 max-h-[80vh] overflow-y-auto"
+        className="relative bg-white dark:bg-gray-900 rounded-2xl shadow-2xl shadow-black/[0.12] dark:shadow-black/40 ring-1 ring-gray-950/[0.05] dark:ring-white/[0.1] px-10 py-8 max-w-4xl w-full mx-6 max-h-[85vh] overflow-y-auto animate-in fade-in zoom-in-95"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between mb-6">
-          <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">Keyboard Shortcuts</h2>
+        {/* Header */}
+        <div className="flex items-center justify-between mb-8 pb-6 border-b border-gray-100 dark:border-gray-800">
+          <div>
+            <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Keyboard Shortcuts</h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Quick reference for all available shortcuts</p>
+          </div>
           <button
             onClick={onClose}
-            className="w-8 h-8 rounded-lg flex items-center justify-center text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+            className="w-10 h-10 rounded-xl flex items-center justify-center text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-all duration-150"
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
               <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
             </svg>
           </button>
         </div>
-        <div className="grid grid-cols-2 gap-6">
+
+        {/* Shortcuts Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-10">
           {SHORTCUT_GROUPS.map((group) => (
-            <div key={group.title}>
-              <h3 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">{group.title}</h3>
-              <div className="space-y-2">
-                {group.shortcuts.map((s) => (
-                  <div key={s.key} className="flex items-center justify-between gap-4">
-                    <span className="text-sm text-gray-700 dark:text-gray-300">{s.description}</span>
-                    <kbd className="inline-flex items-center px-2 py-0.5 rounded-md text-xs font-mono font-medium bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 border border-gray-200 dark:border-gray-700 whitespace-nowrap">
+            <div key={group.title} className="min-w-0">
+              <h3 className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-4 flex items-center gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-gray-300 dark:bg-gray-600"></span>
+                {group.title}
+              </h3>
+              <div className="rounded-xl bg-gray-50/50 dark:bg-gray-800/30 border border-gray-100 dark:border-gray-800 overflow-hidden">
+                {group.shortcuts.map((s, idx) => (
+                  <div 
+                    key={s.key} 
+                    className={`flex items-center justify-between gap-6 px-4 py-3 hover:bg-gray-100/70 dark:hover:bg-gray-800/50 transition-colors ${
+                      idx !== group.shortcuts.length - 1 ? 'border-b border-gray-100 dark:border-gray-800/50' : ''
+                    }`}
+                  >
+                    <span className="text-sm text-gray-700 dark:text-gray-300 font-medium">{s.description}</span>
+                    <kbd className="inline-flex items-center justify-center min-w-[2rem] px-2.5 py-1.5 rounded-lg text-xs font-mono font-semibold bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 border border-gray-200 dark:border-gray-600 shadow-[0_2px_0_0_rgba(0,0,0,0.05),inset_0_-1px_0_0_rgba(0,0,0,0.05)] dark:shadow-[0_2px_0_0_rgba(0,0,0,0.3),inset_0_-1px_0_0_rgba(255,255,255,0.05)] whitespace-nowrap">
                       {s.key}
                     </kbd>
                   </div>
@@ -112,7 +126,17 @@ export function ShortcutsDialog({ open, onClose }: ShortcutsDialogProps) {
             </div>
           ))}
         </div>
-        <p className="mt-6 text-xs text-center text-gray-400 dark:text-gray-500">Press <kbd className="px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 font-mono">?</kbd> to toggle this dialog</p>
+
+        {/* Footer */}
+        <div className="mt-10 pt-6 border-t border-gray-100 dark:border-gray-800">
+          <p className="text-sm text-center text-gray-400 dark:text-gray-500">
+            Press{' '}
+            <kbd className="inline-flex items-center justify-center px-2 py-1 rounded-md text-xs font-mono font-semibold bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-600 shadow-[0_2px_0_0_rgba(0,0,0,0.05)] dark:shadow-[0_2px_0_0_rgba(0,0,0,0.3)]">
+              ?
+            </kbd>
+            {' '}to toggle this dialog
+          </p>
+        </div>
       </div>
     </div>
   );

@@ -89,8 +89,8 @@ export function hitTestElement(point: Point, element: CanvasElement, tolerance =
     return dist <= 1 && innerDist >= 1;
   }
 
-  // Images are always "filled" — hit anywhere inside bounds
-  if (element.type === 'image') {
+  // Images and text are always "filled" — hit anywhere inside bounds
+  if (element.type === 'image' || element.type === 'text') {
     return isPointInBounds(point, bounds, tolerance);
   }
 
