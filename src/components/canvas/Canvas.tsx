@@ -548,6 +548,7 @@ export function Canvas() {
     textarea.style.left = (element.x * zoom + offsetX) + 'px';
     textarea.style.top = (element.y * zoom + offsetY) + 'px';
     textarea.style.fontSize = ((element.fontSize ?? 40) * zoom) + 'px';
+    textarea.style.color = element.strokeColor;
     textarea.value = element.text ?? '';
     textarea.focus();
     
@@ -668,6 +669,7 @@ export function Canvas() {
     textarea.style.left = (canvasPoint.x * zoom + offsetX) + 'px';
     textarea.style.top = (canvasPoint.y * zoom + offsetY) + 'px';
     textarea.style.fontSize = (currentFontSize * zoom) + 'px';
+    textarea.style.color = useToolStore.getState().strokeColor;
     textarea.value = '';
     textarea.focus();
 
@@ -778,7 +780,7 @@ export function Canvas() {
       />
       <textarea
         ref={textInputRef}
-        className="absolute hidden p-0 m-0 border-none outline-none bg-transparent resize-none text-gray-900 dark:text-gray-100"
+        className="absolute hidden p-0 m-0 border-none outline-none bg-transparent resize-none"
         style={{
           fontFamily: "'Virgil', 'Segoe Print', 'Comic Sans MS', cursive",
           minWidth: '20px',
