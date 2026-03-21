@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useToolStore } from '../../store/toolStore';
 import { useElementStore } from '../../store/elementStore';
-import { COLOR_PALETTE, ROUGHNESS_LEVELS, STROKE_STYLES, FILL_STYLES } from '../../constants';
+import { COLOR_PALETTE, ROUGHNESS_LEVELS, STROKE_STYLES, FILL_STYLES, FONT_SIZES } from '../../constants';
 import type { StrokeStyle, FillStyle } from '../../types';
 
 const ROUGHNESS_LABELS = ['None', 'Low', 'Medium', 'High'];
@@ -427,7 +427,7 @@ export function StylePanel() {
             <div className="flex flex-col gap-2">
               <Label>Font size</Label>
               <div className="flex flex-col gap-0.5 max-h-52 overflow-y-auto">
-                {[12, 14, 16, 18, 20, 24, 28, 32, 40, 48, 64].map((s) => (
+                {FONT_SIZES.map((s) => (
                   <button
                     key={s}
                     onClick={() => { setFontSize(s); applyToSelected({ fontSize: s }); }}

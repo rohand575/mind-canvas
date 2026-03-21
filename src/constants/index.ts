@@ -60,3 +60,7 @@ export const COLOR_PALETTE = [
 
 export const STROKE_WIDTHS = [1, 2, 3, 4, 6];
 export const ROUGHNESS_LEVELS = [0, 1, 2, 3];
+
+// ─── Font Sizes ─────────────────────────────────────────────────
+
+export const FONT_SIZES = [12, 14, 16, 18, 20, 24, 28, 32, 40, 48, 64];

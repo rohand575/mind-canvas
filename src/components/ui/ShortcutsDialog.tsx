@@ -21,6 +21,16 @@ const SHORTCUT_GROUPS = [
     ],
   },
   {
+    title: 'Styles',
+    shortcuts: [
+      { key: '1–8', description: 'Set stroke color' },
+      { key: 'Alt+1–8', description: 'Set fill color' },
+      { key: 'Alt+0', description: 'Transparent fill' },
+      { key: 'Ctrl+Shift+<', description: 'Decrease text size' },
+      { key: 'Ctrl+Shift+>', description: 'Increase text size' },
+    ],
+  },
+  {
     title: 'Actions',
     shortcuts: [
       { key: 'Ctrl+Z', description: 'Undo' },

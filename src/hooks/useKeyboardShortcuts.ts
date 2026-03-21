@@ -5,6 +5,7 @@ import { useCanvasStore } from '../store/canvasStore';
 import { useHistoryStore } from '../store/historyStore';
 import { getElementBounds } from '../utils/geometry';
 import { createElement } from '../utils/createElement';
+import { COLOR_PALETTE, FONT_SIZES } from '../constants';
 import type { Tool } from '../types';
 import { useHistory } from './useHistory';
 
@@ -122,6 +123,16 @@ export async function pasteFromClipboard() {
       fontSize,
       zIndex: useElementStore.getState().getMaxZIndex() + 1,
     });
+    // Measure text dimensions using an offscreen canvas
+    const measureCanvas = document.createElement('canvas');
+    const measureCtx = measureCanvas.getContext('2d');
+    if (measureCtx) {
+      measureCtx.font = `${fontSize}px 'Virgil', 'Segoe Print', 'Comic Sans MS', cursive`;
+      const lines = text.split('\n');
+      const maxWidth = Math.max(...lines.map((l) => measureCtx.measureText(l).width));
+      newElement.width = maxWidth;
+      newElement.height = lines.length * Math.round(fontSize * 1.3);
+    }
     useElementStore.getState().addElement(newElement);
     useToolStore.getState().setActiveTool('select');
     useToolStore.getState().setSelectedIds([newElement.id]);
@@ -167,6 +178,16 @@ export async function pasteFromClipboard() {
         fontSize,
         zIndex: useElementStore.getState().getMaxZIndex() + 1,
       });
+      // Measure text dimensions using an offscreen canvas
+      const measureCanvas = document.createElement('canvas');
+      const measureCtx = measureCanvas.getContext('2d');
+      if (measureCtx) {
+        measureCtx.font = `${fontSize}px 'Virgil', 'Segoe Print', 'Comic Sans MS', cursive`;
+        const lines = text.split('\n');
+        const maxWidth = Math.max(...lines.map((l) => measureCtx.measureText(l).width));
+        newElement.width = maxWidth;
+        newElement.height = lines.length * Math.round(fontSize * 1.3);
+      }
       useElementStore.getState().addElement(newElement);
       useToolStore.getState().setActiveTool('select');
       useToolStore.getState().setSelectedIds([newElement.id]);
@@ -204,6 +225,66 @@ export function useKeyboardShortcuts(onToggleShortcuts?: () => void) {
           setActiveTool(tool);
           return;
         }
+      }
+
+      // Stroke color shortcuts: 1-8 (no modifiers)
+      const solidColors = COLOR_PALETTE.filter(c => c !== 'transparent');
+      if (!e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+        const colorIndex = parseInt(e.key, 10) - 1;
+        if (colorIndex >= 0 && colorIndex < solidColors.length) {
+          const color = solidColors[colorIndex];
+          const { setStrokeColor } = useToolStore.getState();
+          setStrokeColor(color);
+          const { updateElement } = useElementStore.getState();
+          for (const id of selectedIds) updateElement(id, { strokeColor: color });
+          return;
+        }
+      }
+
+      // Fill color shortcuts: Alt+1-8, Alt+0 for transparent
+      if (e.altKey && !e.ctrlKey && !e.metaKey) {
+        if (e.key === '0') {
+          e.preventDefault();
+          const { setFillColor } = useToolStore.getState();
+          setFillColor('transparent');
+          const { updateElement } = useElementStore.getState();
+          for (const id of selectedIds) updateElement(id, { fillColor: 'transparent' });
+          return;
+        }
+        const fillIndex = parseInt(e.key, 10) - 1;
+        if (fillIndex >= 0 && fillIndex < solidColors.length) {
+          e.preventDefault();
+          const color = solidColors[fillIndex];
+          const { setFillColor } = useToolStore.getState();
+          setFillColor(color);
+          const { updateElement } = useElementStore.getState();
+          for (const id of selectedIds) updateElement(id, { fillColor: color });
+          return;
+        }
+      }
+
+      // Text size shortcuts: Ctrl+Shift+< (decrease) / Ctrl+Shift+> (increase)
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === '<' || e.key === ',')) {
+        e.preventDefault();
+        const { fontSize, setFontSize } = useToolStore.getState();
+        const idx = FONT_SIZES.indexOf(fontSize);
+        const newIdx = idx > 0 ? idx - 1 : 0;
+        const newSize = FONT_SIZES[newIdx];
+        setFontSize(newSize);
+        const { updateElement } = useElementStore.getState();
+        for (const id of selectedIds) updateElement(id, { fontSize: newSize });
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === '>' || e.key === '.')) {
+        e.preventDefault();
+        const { fontSize, setFontSize } = useToolStore.getState();
+        const idx = FONT_SIZES.indexOf(fontSize);
+        const newIdx = idx < FONT_SIZES.length - 1 ? idx + 1 : FONT_SIZES.length - 1;
+        const newSize = FONT_SIZES[newIdx];
+        setFontSize(newSize);
+        const { updateElement } = useElementStore.getState();
+        for (const id of selectedIds) updateElement(id, { fontSize: newSize });
+        return;
       }
 
       // Delete selected elements
