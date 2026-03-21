@@ -3,7 +3,7 @@ import { useElementStore } from '../../store/elementStore';
 import { useToolStore } from '../../store/toolStore';
 import { useHistoryStore } from '../../store/historyStore';
 import { useHistory } from '../../hooks/useHistory';
-import { exportAsPNG, exportAsJSON, exportAsSVG, copyCanvasToClipboard, importFromJSON, exportProjectFile, importProjectFile } from '../../utils/exportCanvas';
+import { exportAsPNG, exportAsJSON, exportAsSVG, copyCanvasToClipboard, exportProjectFile, importProjectFile } from '../../utils/exportCanvas';
 import { getElementBounds } from '../../utils/geometry';
 import { IconButton } from '../ui/IconButton';
 import {
@@ -54,23 +54,6 @@ export function ActionBar() {
     const { elements } = useElementStore.getState();
     const isDark = useCanvasStore.getState().theme === 'dark';
     await copyCanvasToClipboard(elements, isDark);
-  };
-
-  const handleImportJSON = () => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = '.json';
-    input.onchange = async () => {
-      const file = input.files?.[0];
-      if (!file) return;
-      const text = await file.text();
-      const elements = importFromJSON(text);
-      if (elements) {
-        saveSnapshot();
-        useElementStore.getState().setElements(elements);
-      }
-    };
-    input.click();
   };
 
   const handleSaveProject = () => {

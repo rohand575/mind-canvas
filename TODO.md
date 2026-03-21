@@ -41,7 +41,7 @@
 - [ ] Scene search (find elements by text content)
 - [ ] Element stats / properties panel (exact dimensions)
 - [ ] Eraser tool
-- [ ] when i move around with right mouse click, the mouse pointer should be changed to the hand symbol
+- [x] when i move around with right mouse click, the mouse pointer should be changed to the hand symbol
 
 ## Phase 4 — Major Features
 - [ ] Real-time collaboration (multi-user editing)

@@ -1,5 +1,5 @@
 import rough from 'roughjs';
-import type { CanvasElement, CanvasState } from '../types';
+import type { CanvasElement } from '../types';
 import { renderElement } from '../features/drawing/renderElement';
 import { renderElementSVG } from '../features/drawing/renderElementSVG';
 import { getElementBounds } from './geometry';
