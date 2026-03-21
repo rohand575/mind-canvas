@@ -3,7 +3,7 @@ import { useElementStore } from '../../store/elementStore';
 import { useToolStore } from '../../store/toolStore';
 import { useHistoryStore } from '../../store/historyStore';
 import { useHistory } from '../../hooks/useHistory';
-import { exportAsPNG, exportAsJSON, exportAsSVG, copyCanvasToClipboard, importFromJSON } from '../../utils/exportCanvas';
+import { exportAsPNG, exportAsJSON, exportAsSVG, copyCanvasToClipboard, importFromJSON, exportProjectFile, importProjectFile } from '../../utils/exportCanvas';
 import { getElementBounds } from '../../utils/geometry';
 import { IconButton } from '../ui/IconButton';
 import {
@@ -73,6 +73,40 @@ export function ActionBar() {
     input.click();
   };
 
+  const handleSaveProject = () => {
+    const { elements } = useElementStore.getState();
+    const { offsetX, offsetY, zoom, theme, showGrid } = useCanvasStore.getState();
+    exportProjectFile(elements, { offsetX, offsetY, zoom, theme, showGrid });
+  };
+
+  const handleOpenProject = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.mcv,.json';
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      const text = await file.text();
+      const result = importProjectFile(text);
+      if (result) {
+        saveSnapshot();
+        useElementStore.getState().setElements(result.elements);
+        if (result.canvasState) {
+          const store = useCanvasStore.getState();
+          store.setOffset(result.canvasState.offsetX, result.canvasState.offsetY);
+          store.setZoom(result.canvasState.zoom);
+          if (result.canvasState.theme) store.setTheme(result.canvasState.theme);
+          if (result.canvasState.showGrid !== undefined) {
+            if (result.canvasState.showGrid !== store.showGrid) store.toggleGrid();
+          }
+        }
+      } else {
+        alert('Invalid project file');
+      }
+    };
+    input.click();
+  };
+
   const handleClearCanvas = () => {
     if (useElementStore.getState().elements.length === 0) return;
     if (!confirm('Clear all elements? This action can be undone with Ctrl+Z.')) return;
@@ -110,7 +144,7 @@ export function ActionBar() {
 
       <div className="h-px w-full bg-gray-200/80 dark:bg-gray-700/80 my-1.5" />
 
-      <IconButton title="Import JSON" onClick={handleImportJSON}>
+      <IconButton title="Open Project (.mcv)" onClick={handleOpenProject}>
         <UploadIcon />
       </IconButton>
 
@@ -140,6 +174,14 @@ export function ActionBar() {
           >
             <svg className="w-4 h-4 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
             Export as JSON
+          </button>
+          <div className="h-px bg-gray-200 dark:bg-gray-700 my-1" />
+          <button
+            onClick={handleSaveProject}
+            className="w-full px-4 py-2 text-left text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700/60 transition-colors flex items-center gap-2.5"
+          >
+            <svg className="w-4 h-4 text-gray-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>
+            Save Project (.mcv)
           </button>
           <div className="h-px bg-gray-200 dark:bg-gray-700 my-1" />
           <button

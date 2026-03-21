@@ -1,8 +1,20 @@
 import rough from 'roughjs';
-import type { CanvasElement } from '../types';
+import type { CanvasElement, CanvasState } from '../types';
 import { renderElement } from '../features/drawing/renderElement';
 import { renderElementSVG } from '../features/drawing/renderElementSVG';
 import { getElementBounds } from './geometry';
+
+interface ProjectFile {
+  version: number;
+  elements: CanvasElement[];
+  canvasState?: {
+    offsetX: number;
+    offsetY: number;
+    zoom: number;
+    theme?: 'light' | 'dark';
+    showGrid?: boolean;
+  };
+}
 
 /**
  * Export elements as a PNG image
@@ -180,4 +192,55 @@ export async function copyCanvasToClipboard(
       ]).then(() => resolve(true)).catch(() => resolve(false));
     }, 'image/png');
   });
+}
+
+/**
+ * Export project file (elements + canvas state) for later restoration
+ */
+export function exportProjectFile(
+  elements: CanvasElement[],
+  canvasState: { offsetX: number; offsetY: number; zoom: number; theme: 'light' | 'dark'; showGrid: boolean },
+): void {
+  const data: ProjectFile = {
+    version: 2,
+    elements,
+    canvasState: {
+      offsetX: canvasState.offsetX,
+      offsetY: canvasState.offsetY,
+      zoom: canvasState.zoom,
+      theme: canvasState.theme,
+      showGrid: canvasState.showGrid,
+    },
+  };
+  const json = JSON.stringify(data, null, 2);
+  const blob = new Blob([json], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `mindcanvas-project-${Date.now()}.mcv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+/**
+ * Import project file. Returns elements and canvas state if valid, null otherwise.
+ */
+export function importProjectFile(jsonString: string): {
+  elements: CanvasElement[];
+  canvasState?: { offsetX: number; offsetY: number; zoom: number; theme?: 'light' | 'dark'; showGrid?: boolean };
+} | null {
+  try {
+    const data = JSON.parse(jsonString) as ProjectFile;
+    if (!data || !Array.isArray(data.elements)) return null;
+    // Basic validation
+    for (const el of data.elements) {
+      if (typeof el.id !== 'string' || typeof el.type !== 'string') return null;
+    }
+    return {
+      elements: data.elements,
+      canvasState: data.canvasState,
+    };
+  } catch {
+    return null;
+  }
 }
