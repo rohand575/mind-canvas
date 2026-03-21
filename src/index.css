@@ -48,7 +48,8 @@ html, body, #root {
 }
 
 .animate-in {
-  animation-duration: 150ms;
+  animation-duration: 180ms;
+  animation-timing-function: cubic-bezier(0.16, 1, 0.3, 1);
   animation-fill-mode: both;
 }
 
@@ -58,4 +59,19 @@ html, body, #root {
 
 .animate-in.zoom-in-95 {
   animation-name: fade-in, zoom-in-95;
+}
+
+@keyframes slide-up-fade {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-in.slide-up-fade {
+  animation-name: slide-up-fade;
 }

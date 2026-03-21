@@ -33,9 +33,9 @@ function Popover({
     <div ref={ref} className="relative">
       <div onClick={() => setOpen(!open)}>{trigger}</div>
       <div
-        className={`absolute top-full mt-2.5 bg-white/95 dark:bg-gray-800/95 backdrop-blur-xl rounded-xl shadow-2xl shadow-black/12 dark:shadow-black/40 border border-gray-200/70 dark:border-gray-700/50 p-3 z-50 min-w-max
-          transition-all duration-200 ease-out origin-top
-          ${open ? 'opacity-100 scale-100 translate-y-0' : 'opacity-0 scale-95 -translate-y-1 pointer-events-none'}
+        className={`absolute top-full mt-2.5 bg-white/95 dark:bg-gray-900/95 backdrop-blur-lg rounded-xl shadow-lg shadow-black/[0.06] dark:shadow-black/25 ring-1 ring-gray-950/[0.05] dark:ring-white/[0.08] p-3 z-50 min-w-max
+          transition-all duration-150 ease-out origin-top
+          ${open ? 'opacity-100 scale-100 translate-y-0' : 'opacity-0 scale-[0.97] -translate-y-1 pointer-events-none'}
           ${align === 'center' ? 'left-1/2 -translate-x-1/2' : 'left-0'}
         `}
       >
@@ -61,15 +61,15 @@ function SegmentGroup<T extends string | number>({
   title?: string;
 }) {
   return (
-    <div className="flex bg-gray-100/80 dark:bg-gray-800/80 rounded-xl p-1 gap-0.5" title={title}>
+    <div className="flex bg-gray-500/[0.06] dark:bg-white/[0.06] rounded-lg p-0.5 gap-0.5" title={title}>
       {options.map((opt) => (
         <button
           key={String(opt)}
           onClick={() => onChange(opt)}
-          className={`w-9 h-9 flex items-center justify-center rounded-lg transition-all duration-150 ${
+          className={`w-9 h-9 flex items-center justify-center rounded-md transition-all duration-150 ${
             value === opt
-              ? 'bg-white dark:bg-gray-600 shadow-sm text-gray-900 dark:text-gray-100'
-              : 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300'
+              ? 'bg-white dark:bg-gray-700 shadow-[0_1px_2px_rgba(0,0,0,0.04)] text-gray-900 dark:text-gray-100'
+              : 'text-gray-400 dark:text-gray-500 hover:text-gray-500 dark:hover:text-gray-400'
           }`}
         >
           {renderOption(opt, value === opt)}
@@ -97,8 +97,8 @@ function ColorSwatch({
       title={isTransparent ? 'No fill' : color}
       className={`w-7 h-7 rounded-lg transition-all duration-150 flex-shrink-0 ${
         active
-          ? 'ring-2 ring-offset-2 ring-indigo-500 dark:ring-offset-gray-800 scale-105'
-          : 'hover:scale-110 hover:shadow-md'
+          ? 'ring-2 ring-offset-2 ring-indigo-500/70 dark:ring-offset-gray-900 scale-110'
+          : 'hover:scale-110'
       }`}
       style={{
         backgroundColor: isTransparent ? undefined : color,
@@ -125,7 +125,7 @@ function Label({ children }: { children: React.ReactNode }) {
 // ─── Divider ────────────────────────────────────────────────────────
 
 function Divider() {
-  return <div className="w-px h-8 bg-gray-200/80 dark:bg-gray-700/60 mx-1 flex-shrink-0" />;
+  return <div className="w-px h-7 bg-gray-950/[0.06] dark:bg-white/[0.06] mx-1.5 flex-shrink-0" />;
 }
 
 // ─── Trigger Button ─────────────────────────────────────────────────
@@ -141,10 +141,10 @@ function TriggerBtn({
 }) {
   return (
     <button
-      className={`h-11 px-2.5 rounded-xl flex items-center gap-2 transition-all duration-150 cursor-pointer ${
+      className={`h-11 px-2.5 rounded-xl flex items-center gap-2 transition-all duration-150 ease-out cursor-pointer active:scale-[0.96] ${
         active
-          ? 'bg-indigo-50 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-400'
-          : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700/50 hover:text-gray-700 dark:hover:text-gray-200'
+          ? 'bg-indigo-500/[0.08] dark:bg-indigo-400/[0.12] text-indigo-600 dark:text-indigo-400'
+          : 'text-gray-500 dark:text-gray-400 hover:bg-gray-500/[0.06] dark:hover:bg-white/[0.06] hover:text-gray-700 dark:hover:text-gray-200'
       }`}
       title={title}
     >
@@ -342,8 +342,8 @@ export function StylePanel() {
                 onClick={() => { setRoughness(r); applyToSelected({ roughness: r }); }}
                 className={`h-8 px-2.5 rounded-lg flex items-center gap-2.5 transition-all duration-150 ${
                   roughness === r
-                    ? 'bg-indigo-50 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-400'
-                    : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700/50'
+                    ? 'bg-indigo-500/[0.08] dark:bg-indigo-400/[0.12] text-indigo-600 dark:text-indigo-400'
+                    : 'text-gray-600 dark:text-gray-400 hover:bg-gray-500/[0.06] dark:hover:bg-white/[0.06]'
                 }`}
               >
                 <span className="w-4 text-center font-bold text-xs">{r}</span>
@@ -395,10 +395,10 @@ export function StylePanel() {
       <button
         title={lockToolMode ? 'Tool locked (click to unlock)' : 'Lock tool (keep active after drawing)'}
         onClick={() => setLockToolMode(!lockToolMode)}
-        className={`h-11 w-11 rounded-xl flex items-center justify-center transition-all duration-150 ${
+        className={`h-11 w-11 rounded-xl flex items-center justify-center transition-all duration-150 ease-out active:scale-[0.92] ${
           lockToolMode
-            ? 'bg-indigo-100 dark:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400'
-            : 'text-gray-400 dark:text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700/50 hover:text-gray-600 dark:hover:text-gray-300'
+            ? 'bg-indigo-500/[0.08] dark:bg-indigo-400/[0.12] text-indigo-600 dark:text-indigo-400'
+            : 'text-gray-400 dark:text-gray-500 hover:bg-gray-500/[0.06] dark:hover:bg-white/[0.06] hover:text-gray-600 dark:hover:text-gray-300'
         }`}
       >
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -433,8 +433,8 @@ export function StylePanel() {
                     onClick={() => { setFontSize(s); applyToSelected({ fontSize: s }); }}
                     className={`h-7 px-2.5 rounded-md flex items-center text-sm transition-all duration-150 ${
                       fontSize === s
-                        ? 'bg-indigo-50 dark:bg-indigo-500/15 text-indigo-600 dark:text-indigo-400 font-medium'
-                        : 'text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700/50'
+                        ? 'bg-indigo-500/[0.08] dark:bg-indigo-400/[0.12] text-indigo-600 dark:text-indigo-400 font-medium'
+                        : 'text-gray-600 dark:text-gray-400 hover:bg-gray-500/[0.06] dark:hover:bg-white/[0.06]'
                     }`}
                   >
                     {s}px

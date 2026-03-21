@@ -10,14 +10,11 @@ import { ActionBar } from './ActionBar';
  */
 export function Toolbar() {
   const panelClasses = `
-    bg-white/80 dark:bg-gray-900/80 
-    backdrop-blur-xl 
-    rounded-2xl 
-    shadow-xl shadow-black/10 dark:shadow-black/30
-    border border-gray-200/50 dark:border-gray-700/50
-    transition-all duration-200
-    hover:bg-white/95 dark:hover:bg-gray-900/95
-    hover:shadow-2xl hover:shadow-black/15 dark:hover:shadow-black/40
+    bg-white/90 dark:bg-gray-900/90
+    backdrop-blur-lg
+    rounded-xl
+    shadow-sm shadow-black/[0.03] dark:shadow-black/20
+    ring-1 ring-gray-950/[0.05] dark:ring-white/[0.06]
   `;
 
   return (

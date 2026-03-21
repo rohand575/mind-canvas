@@ -69,9 +69,9 @@ export function ShortcutsDialog({ open, onClose }: ShortcutsDialogProps) {
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center" onClick={onClose}>
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" />
+      <div className="absolute inset-0 bg-black/30 backdrop-blur-md" />
       <div
-        className="relative bg-white dark:bg-gray-900 rounded-2xl shadow-2xl border border-gray-200/50 dark:border-gray-700/50 p-8 max-w-2xl w-full mx-4 max-h-[80vh] overflow-y-auto"
+        className="relative bg-white dark:bg-gray-900 rounded-xl shadow-xl shadow-black/[0.08] dark:shadow-black/30 ring-1 ring-gray-950/[0.05] dark:ring-white/[0.08] p-8 max-w-2xl w-full mx-4 max-h-[80vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between mb-6">

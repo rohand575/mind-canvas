@@ -48,7 +48,7 @@ export function Tooltip({ content, children, delay = 400, position = 'top' }: To
           className={`absolute ${positionClasses[position]} z-[200] pointer-events-none`}
           role="tooltip"
         >
-          <div className="px-2.5 py-1.5 text-xs font-medium text-white bg-gray-900 dark:bg-gray-700 rounded-lg shadow-lg whitespace-nowrap animate-in fade-in zoom-in-95">
+          <div className="px-2.5 py-1.5 text-[11px] font-medium text-white bg-gray-800 dark:bg-gray-700 rounded-md shadow-md whitespace-nowrap animate-in fade-in zoom-in-95">
             {content}
           </div>
           <div
