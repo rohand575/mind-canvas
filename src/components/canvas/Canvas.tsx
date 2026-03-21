@@ -27,7 +27,7 @@ type InteractionMode =
   | { type: 'none' }
   | { type: 'drawing'; element: CanvasElement }
   | { type: 'moving'; startX: number; startY: number; originals: Map<string, { x: number; y: number }> }
-  | { type: 'resizing'; elementId: string; handle: ResizeHandle; startX: number; startY: number; original: { x: number; y: number; width: number; height: number } }
+  | { type: 'resizing'; elementId: string; handle: ResizeHandle; startX: number; startY: number; original: { x: number; y: number; width: number; height: number; fontSize?: number; points?: Point[] }; elementType: string }
   | { type: 'selecting'; startX: number; startY: number }
   | { type: 'text-input' };
 
@@ -183,6 +183,9 @@ export function Canvas() {
     textarea.value = '';
     textPositionRef.current = null;
     interactionRef.current = { type: 'none' };
+    // Cleanup listeners
+    (textarea as any).__cleanupBlur?.();
+    (textarea as any).__cleanupKeydown?.();
   }, [saveSnapshot]);
   // ─── Mouse Down ───────────────────────────────────────────────
   const handleMouseDown = useCallback(
@@ -238,13 +241,23 @@ export function Canvas() {
             const handle = getResizeHandleAtPoint(canvasPoint, el);
             if (handle) {
               saveSnapshot();
+              // Get element bounds for point-based elements
+              const bounds = getElementBounds(el);
               interactionRef.current = {
                 type: 'resizing',
                 elementId: id,
                 handle,
                 startX: canvasPoint.x,
                 startY: canvasPoint.y,
-                original: { x: el.x, y: el.y, width: el.width, height: el.height },
+                original: { 
+                  x: bounds.x, 
+                  y: bounds.y, 
+                  width: bounds.width, 
+                  height: bounds.height, 
+                  fontSize: el.fontSize,
+                  points: el.points ? el.points.map(p => ({ ...p })) : undefined
+                },
+                elementType: el.type,
               };
               return;
             }
@@ -373,7 +386,7 @@ export function Canvas() {
           updateElement(id, { x: newPos.x, y: newPos.y });
         }
       } else if (interaction.type === 'resizing') {
-        const { elementId, handle, startX, startY, original } = interaction;
+        const { elementId, handle, startX, startY, original, elementType } = interaction;
         const dx = canvasPoint.x - startX;
         const dy = canvasPoint.y - startY;
 
@@ -385,7 +398,33 @@ export function Canvas() {
         if (handle.includes('s')) { height += dy; }
         if (handle.includes('n')) { y += dy; height -= dy; }
 
-        updateElement(elementId, { x, y, width, height });
+        // For text elements, scale fontSize proportionally
+        if (elementType === 'text' && original.fontSize) {
+          const scaleX = original.width > 0 ? width / original.width : 1;
+          const scaleY = original.height > 0 ? height / original.height : 1;
+          const scale = Math.max(0.1, Math.min(scaleX, scaleY)); // Use smaller scale, min 10%
+          const newFontSize = Math.round(original.fontSize * scale);
+          updateElement(elementId, { x, y, width, height, fontSize: Math.max(8, Math.min(200, newFontSize)) });
+        } else if ((elementType === 'line' || elementType === 'arrow' || elementType === 'freehand') && original.points) {
+          // For point-based elements, scale points proportionally
+          const scaleX = original.width > 0 ? Math.abs(width) / original.width : 1;
+          const scaleY = original.height > 0 ? Math.abs(height) / original.height : 1;
+          
+          // Find the bounds of original points to calculate proper offset
+          const origMinX = Math.min(...original.points.map(p => p.x));
+          const origMinY = Math.min(...original.points.map(p => p.y));
+          
+          // Scale points relative to their bounding box origin
+          const scaledPoints = original.points.map(p => ({
+            x: (p.x - origMinX) * scaleX + (width < 0 ? Math.abs(width) : 0),
+            y: (p.y - origMinY) * scaleY + (height < 0 ? Math.abs(height) : 0),
+          }));
+          
+          // Update element position (to new bounding box origin) and scaled points
+          updateElement(elementId, { x, y, points: scaledPoints });
+        } else {
+          updateElement(elementId, { x, y, width, height });
+        }
       } else if (interaction.type === 'selecting') {
         const { startX, startY } = interaction;
         selectionBoxRef.current = normalizeBounds(
@@ -424,6 +463,24 @@ export function Canvas() {
         useToolStore.getState().setActiveTool('select');
       }
       useToolStore.getState().setSelectedIds([el.id]);
+    } else if (interaction.type === 'resizing' && interaction.elementType === 'text') {
+      // Recalculate text dimensions based on new fontSize
+      const { elements } = useElementStore.getState();
+      const current = elements.find((e) => e.id === interaction.elementId);
+      if (current && current.text) {
+        const canvas = canvasRef.current;
+        if (canvas) {
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            const fontSize = current.fontSize ?? 40;
+            ctx.font = `${fontSize}px 'Virgil', 'Segoe Print', 'Comic Sans MS', cursive`;
+            const lines = current.text.split('\n');
+            const maxWidth = Math.max(...lines.map((l) => ctx.measureText(l).width));
+            const height = lines.length * Math.round(fontSize * 1.3);
+            useElementStore.getState().updateElement(interaction.elementId, { width: maxWidth, height });
+          }
+        }
+      }
     } else if (interaction.type === 'selecting' && selectionBoxRef.current) {
       // Select all elements inside selection box
       const box = selectionBoxRef.current;
@@ -481,24 +538,8 @@ export function Canvas() {
     canvas.style.cursor = hovered ? 'move' : 'default';
   }, [isSpacePressed]);
 
-  // ─── Double-Click (edit existing text) ─────────────────────────
-  const handleDoubleClick = useCallback(
-    (e: React.MouseEvent) => {
-      const canvasPoint = screenToCanvas(e.clientX, e.clientY);
-      const { elements } = useElementStore.getState();
-      const sortedDesc = [...elements].sort((a, b) => b.zIndex - a.zIndex);
-      const hitElement = sortedDesc.find((el) => el.type === 'text' && hitTestElement(canvasPoint, el));
-      if (hitElement) {
-        e.preventDefault();
-        interactionRef.current = { type: 'text-input' };
-        showTextInputForEdit(hitElement);
-      }
-    },
-    [screenToCanvas],
-  );
-
   // ─── Edit existing text element ───────────────────────────────
-  const showTextInputForEdit = useCallback((element: CanvasElement) => {
+  const showTextInputForEdit = useCallback((element: CanvasElement, clickPoint?: Point) => {
     const { offsetX, offsetY, zoom } = useCanvasStore.getState();
     const textarea = textInputRef.current;
     if (!textarea) return;
@@ -509,7 +550,50 @@ export function Canvas() {
     textarea.style.fontSize = ((element.fontSize ?? 40) * zoom) + 'px';
     textarea.value = element.text ?? '';
     textarea.focus();
-    textarea.select();
+    
+    // Place cursor at click position instead of selecting all
+    if (clickPoint) {
+      const text = element.text ?? '';
+      const fontSize = element.fontSize ?? 40;
+      const lineHeight = fontSize * 1.3;
+      const relY = clickPoint.y - element.y;
+      const lineIndex = Math.max(0, Math.floor(relY / lineHeight));
+      const lines = text.split('\n');
+      
+      // Calculate character position in the clicked line
+      let charPos = 0;
+      for (let i = 0; i < Math.min(lineIndex, lines.length); i++) {
+        charPos += lines[i].length + 1; // +1 for newline
+      }
+      
+      if (lineIndex < lines.length) {
+        const canvas = canvasRef.current;
+        if (canvas) {
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.font = `${fontSize}px 'Virgil', 'Segoe Print', 'Comic Sans MS', cursive`;
+            const relX = clickPoint.x - element.x;
+            const line = lines[lineIndex];
+            // Find character position by measuring text width
+            for (let i = 0; i <= line.length; i++) {
+              const w = ctx.measureText(line.substring(0, i)).width;
+              if (w >= relX) {
+                charPos += Math.max(0, i - 1);
+                break;
+              }
+              if (i === line.length) charPos += line.length;
+            }
+          }
+        }
+      }
+      textarea.setSelectionRange(charPos, charPos);
+    } else {
+      textarea.select();
+    }
+
+    // Cleanup previous listeners
+    (textarea as any).__cleanupBlur?.();
+    (textarea as any).__cleanupKeydown?.();
 
     const finishEdit = () => {
       const text = textarea.value.trim();
@@ -524,7 +608,7 @@ export function Canvas() {
             const lines = text.split('\n');
             const maxWidth = Math.max(...lines.map((l) => ctx.measureText(l).width));
             updates.width = maxWidth;
-            updates.height = lines.length * 26;
+            updates.height = lines.length * Math.round((element.fontSize ?? 40) * 1.3);
           }
         }
         useElementStore.getState().updateElement(element.id, updates);
@@ -533,14 +617,19 @@ export function Canvas() {
       }
       textarea.style.display = 'none';
       interactionRef.current = { type: 'none' };
+      // Cleanup listeners
+      (textarea as any).__cleanupBlur?.();
+      (textarea as any).__cleanupKeydown?.();
+    };
+
+    textarea.addEventListener('blur', finishEdit);
+    (textarea as any).__cleanupBlur = () => {
       textarea.removeEventListener('blur', finishEdit);
     };
 
-    (textarea as any).__cleanupKeydown?.();
-    textarea.addEventListener('blur', finishEdit);
     const handleEditKeydown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        textarea.blur(); // Save edits and close (don't revert)
+        textarea.blur();
       }
     };
     textarea.addEventListener('keydown', handleEditKeydown);
@@ -548,6 +637,22 @@ export function Canvas() {
       textarea.removeEventListener('keydown', handleEditKeydown);
     };
   }, [saveSnapshot]);
+
+  // ─── Double-Click (edit existing text) ─────────────────────────
+  const handleDoubleClick = useCallback(
+    (e: React.MouseEvent) => {
+      const canvasPoint = screenToCanvas(e.clientX, e.clientY);
+      const { elements } = useElementStore.getState();
+      const sortedDesc = [...elements].sort((a, b) => b.zIndex - a.zIndex);
+      const hitElement = sortedDesc.find((el) => el.type === 'text' && hitTestElement(canvasPoint, el));
+      if (hitElement) {
+        e.preventDefault();
+        interactionRef.current = { type: 'text-input' };
+        showTextInputForEdit(hitElement, canvasPoint);
+      }
+    },
+    [screenToCanvas, showTextInputForEdit],
+  );
 
   // ─── Text Input ───────────────────────────────────────────────
   const showTextInput = useCallback((canvasPoint: Point) => {
@@ -571,7 +676,8 @@ export function Canvas() {
       if (!position) {
         textarea.style.display = 'none';
         interactionRef.current = { type: 'none' };
-        textarea.removeEventListener('blur', finishText);
+        (textarea as any).__cleanupBlur?.();
+        (textarea as any).__cleanupKeydown?.();
         return;
       }
       const text = textarea.value.trim();
@@ -614,13 +720,19 @@ export function Canvas() {
       textarea.value = '';
       textPositionRef.current = null;
       interactionRef.current = { type: 'none' };
-      textarea.removeEventListener('blur', finishText);
+      (textarea as any).__cleanupBlur?.();
+      (textarea as any).__cleanupKeydown?.();
     };
 
-    // Clean up previous keydown listener before adding a new one
+    // Clean up previous listeners before adding new ones
+    (textarea as any).__cleanupBlur?.();
     (textarea as any).__cleanupKeydown?.();
 
     textarea.addEventListener('blur', finishText);
+    (textarea as any).__cleanupBlur = () => {
+      textarea.removeEventListener('blur', finishText);
+    };
+
     const handleTextKeydown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         textarea.blur(); // Save text and close (don't clear)
