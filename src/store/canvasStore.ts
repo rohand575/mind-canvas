@@ -25,11 +25,20 @@ interface CanvasStore extends CanvasState {
   loadState: (state: Partial<CanvasState>) => void;
 }
 
+// Load theme from localStorage on startup
+const getInitialTheme = (): Theme => {
+  if (typeof window !== 'undefined') {
+    const saved = localStorage.getItem('mindcanvas-theme');
+    if (saved === 'dark' || saved === 'light') return saved;
+  }
+  return 'light';
+};
+
 export const useCanvasStore = create<CanvasStore>((set, get) => ({
   offsetX: 0,
   offsetY: 0,
   zoom: DEFAULT_ZOOM,
-  theme: 'light',
+  theme: getInitialTheme(),
   showGrid: true,
   snapToGrid: false,
   isPanning: false,
@@ -81,10 +90,16 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
 
   toggleSnapToGrid: () => set((s) => ({ snapToGrid: !s.snapToGrid })),
 
-  toggleTheme: () =>
-    set((s) => ({ theme: s.theme === 'light' ? 'dark' : 'light' })),
+  toggleTheme: () => {
+    const newTheme = get().theme === 'light' ? 'dark' : 'light';
+    localStorage.setItem('mindcanvas-theme', newTheme);
+    set({ theme: newTheme });
+  },
 
-  setTheme: (theme) => set({ theme }),
+  setTheme: (theme) => {
+    localStorage.setItem('mindcanvas-theme', theme);
+    set({ theme });
+  },
 
   toggleShortcuts: () => set((s) => ({ shortcutsOpen: !s.shortcutsOpen })),
 

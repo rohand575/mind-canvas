@@ -202,6 +202,7 @@ export function Canvas() {
           setContextMenu({ x: e.clientX, y: e.clientY });
         } else {
           startRightClickPan(e.clientX, e.clientY);
+          if (canvasRef.current) canvasRef.current.style.cursor = 'grabbing';
         }
         return;
       }
@@ -219,6 +220,7 @@ export function Canvas() {
       // Hand tool: always pan
       if (activeTool === 'hand') {
         startRightClickPan(e.clientX, e.clientY);
+        if (canvasRef.current) canvasRef.current.style.cursor = 'grabbing';
         return;
       }
 
