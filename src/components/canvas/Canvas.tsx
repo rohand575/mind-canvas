@@ -37,6 +37,7 @@ export function Canvas() {
   const interactionRef = useRef<InteractionMode>({ type: 'none' });
   const rafRef = useRef<number>(0);
   const textInputRef = useRef<HTMLTextAreaElement>(null);
+  const textPositionRef = useRef<Point | null>(null);
   const selectionBoxRef = useRef<Bounds | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
 
@@ -141,7 +142,48 @@ export function Canvas() {
       window.removeEventListener('keyup', handleKeyUp);
     };
   }, [render, handleWheel, handleKeyDown, handleKeyUp]);
+  // ─── Save Current Text (synchronous) ───────────────────────────
+  const saveCurrentText = useCallback(() => {
+    const textarea = textInputRef.current;
+    const position = textPositionRef.current;
+    if (!textarea || textarea.style.display === 'none' || !position) return;
 
+    const text = textarea.value.trim();
+    if (text) {
+      saveSnapshot();
+      const { strokeColor, strokeWidth, roughness, opacity, fontSize } = useToolStore.getState();
+      const newElement = createElement({
+        type: 'text',
+        x: position.x,
+        y: position.y,
+        text,
+        strokeColor,
+        strokeWidth,
+        roughness,
+        opacity,
+        fontSize,
+        zIndex: useElementStore.getState().getMaxZIndex() + 1,
+      });
+      // Measure text width/height
+      const canvas = canvasRef.current;
+      if (canvas) {
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.font = `${fontSize}px 'Virgil', 'Segoe Print', 'Comic Sans MS', cursive`;
+          const lines = text.split('\n');
+          const maxWidth = Math.max(...lines.map((l) => ctx.measureText(l).width));
+          newElement.width = maxWidth;
+          newElement.height = lines.length * Math.round(fontSize * 1.3);
+        }
+      }
+      useElementStore.getState().addElement(newElement);
+      useToolStore.getState().setSelectedIds([newElement.id]);
+    }
+    textarea.style.display = 'none';
+    textarea.value = '';
+    textPositionRef.current = null;
+    interactionRef.current = { type: 'none' };
+  }, [saveSnapshot]);
   // ─── Mouse Down ───────────────────────────────────────────────
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
@@ -168,6 +210,9 @@ export function Canvas() {
 
       // Close context menu on left click
       if (contextMenu) setContextMenu(null);
+
+      // Save any active text input before starting new interaction
+      saveCurrentText();
 
       const { activeTool, selectedIds, setSelectedIds, clearSelection, strokeColor, fillColor, strokeWidth, roughness, opacity, fontSize, strokeStyle, fillStyle, edgeRoundness } = useToolStore.getState();
 
@@ -282,7 +327,7 @@ export function Canvas() {
         interactionRef.current = { type: 'drawing', element: newElement };
       }
     },
-    [startPan, startRightClickPan, screenToCanvas, saveSnapshot, contextMenu],
+    [startPan, startRightClickPan, screenToCanvas, saveSnapshot, saveCurrentText, contextMenu],
   );
 
   // ─── Mouse Move ───────────────────────────────────────────────
@@ -509,6 +554,9 @@ export function Canvas() {
     const textarea = textInputRef.current;
     if (!textarea) return;
 
+    // Store position for later save
+    textPositionRef.current = canvasPoint;
+
     textarea.style.display = 'block';
     textarea.style.left = (canvasPoint.x * zoom + offsetX) + 'px';
     textarea.style.top = (canvasPoint.y * zoom + offsetY) + 'px';
@@ -517,14 +565,21 @@ export function Canvas() {
     textarea.focus();
 
     const finishText = () => {
+      const position = textPositionRef.current;
+      if (!position) {
+        textarea.style.display = 'none';
+        interactionRef.current = { type: 'none' };
+        textarea.removeEventListener('blur', finishText);
+        return;
+      }
       const text = textarea.value.trim();
       if (text) {
         saveSnapshot();
         const { strokeColor, strokeWidth, roughness, opacity, fontSize } = useToolStore.getState();
         const newElement = createElement({
           type: 'text',
-          x: canvasPoint.x,
-          y: canvasPoint.y,
+          x: position.x,
+          y: position.y,
           text,
           strokeColor,
           strokeWidth,
@@ -546,10 +601,16 @@ export function Canvas() {
           }
         }
         useElementStore.getState().addElement(newElement);
-        useToolStore.getState().setActiveTool('select');
+        // Switch back to select after text (unless lock mode)
+        const { lockToolMode } = useToolStore.getState();
+        if (!lockToolMode) {
+          useToolStore.getState().setActiveTool('select');
+        }
         useToolStore.getState().setSelectedIds([newElement.id]);
       }
       textarea.style.display = 'none';
+      textarea.value = '';
+      textPositionRef.current = null;
       interactionRef.current = { type: 'none' };
       textarea.removeEventListener('blur', finishText);
     };

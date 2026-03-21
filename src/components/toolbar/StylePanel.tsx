@@ -181,7 +181,7 @@ export function StylePanel() {
   const STROKE_WIDTH_OPTS = [1, 2, 4] as const;
 
   return (
-    <div className="flex items-center gap-1.5">
+    <div className="flex items-center gap-1.5 px-4">
       {/* ── Colors ── */}
       <div className="flex items-center gap-0.5">
         {/* Stroke Color */}

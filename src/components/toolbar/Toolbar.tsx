@@ -28,7 +28,7 @@ export function Toolbar() {
       </div>
 
       {/* Styles - Top center horizontal */}
-      <div className={`absolute top-4 left-1/2 -translate-x-1/2 z-40 flex items-center p-3 ${panelClasses}`}>
+      <div className={`absolute top-4 left-1/2 -translate-x-1/2 z-40 flex items-center px-2 py-1.5 ${panelClasses}`}>
         <StylePanel />
       </div>
 

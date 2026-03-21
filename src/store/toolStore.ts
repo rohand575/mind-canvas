@@ -54,7 +54,7 @@ export const useToolStore = create<ToolStore>((set) => ({
   strokeStyle: DEFAULT_STROKE_STYLE,
   fillStyle: DEFAULT_FILL_STYLE,
   edgeRoundness: DEFAULT_EDGE_ROUNDNESS,
-  lockToolMode: false,
+  lockToolMode: true,
   selectedIds: [],
 
   setActiveTool: (tool) => set({ activeTool: tool }),
