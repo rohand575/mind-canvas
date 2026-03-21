@@ -631,6 +631,7 @@ export function Canvas() {
     const handleEditKeydown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         textarea.blur();
+        useToolStore.getState().clearSelection();
       }
     };
     textarea.addEventListener('keydown', handleEditKeydown);
@@ -737,7 +738,8 @@ export function Canvas() {
 
     const handleTextKeydown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        textarea.blur(); // Save text and close (don't clear)
+        textarea.blur(); // Save text and close
+        useToolStore.getState().clearSelection();
       }
       // Allow Enter for newlines, just blur to confirm
     };
