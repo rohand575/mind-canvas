@@ -4,6 +4,7 @@ import { useElementStore } from '../store/elementStore';
 import { useCanvasStore } from '../store/canvasStore';
 import { useHistoryStore } from '../store/historyStore';
 import { getElementBounds } from '../utils/geometry';
+import { createElement } from '../utils/createElement';
 import type { Tool } from '../types';
 import { useHistory } from './useHistory';
 
@@ -18,6 +19,160 @@ const KEY_TOOL_MAP: Record<string, Tool> = {
   p: 'freehand',
   t: 'text',
 };
+
+/**
+ * Get the center of the current viewport in canvas coordinates
+ */
+function getViewportCenter() {
+  const { offsetX, offsetY, zoom } = useCanvasStore.getState();
+  return {
+    x: (window.innerWidth / 2 - offsetX) / zoom,
+    y: (window.innerHeight / 2 - offsetY) / zoom,
+  };
+}
+
+/**
+ * Paste clipboard content: images, mindcanvas elements, or plain text
+ */
+export async function pasteFromClipboard() {
+  try {
+    // Try reading clipboard items (supports images)
+    const items = await navigator.clipboard.read();
+    for (const item of items) {
+      // Check for image types first
+      const imageType = item.types.find((t) => t.startsWith('image/'));
+      if (imageType) {
+        const blob = await item.getType(imageType);
+        const reader = new FileReader();
+        reader.onload = () => {
+          const dataUrl = reader.result as string;
+          const img = new Image();
+          img.onload = () => {
+            useHistoryStore.getState().pushState(useElementStore.getState().elements);
+            const center = getViewportCenter();
+            // Cap large images to 800px max dimension
+            let w = img.naturalWidth;
+            let h = img.naturalHeight;
+            const maxDim = 800;
+            if (w > maxDim || h > maxDim) {
+              const scale = maxDim / Math.max(w, h);
+              w = Math.round(w * scale);
+              h = Math.round(h * scale);
+            }
+            const newElement = createElement({
+              type: 'image',
+              x: center.x - w / 2,
+              y: center.y - h / 2,
+              width: w,
+              height: h,
+              imageData: dataUrl,
+              zIndex: useElementStore.getState().getMaxZIndex() + 1,
+            });
+            useElementStore.getState().addElement(newElement);
+            useToolStore.getState().setActiveTool('select');
+            useToolStore.getState().setSelectedIds([newElement.id]);
+          };
+          img.src = dataUrl;
+        };
+        reader.readAsDataURL(blob);
+        return;
+      }
+    }
+
+    // No image found — fall back to text
+    const text = await navigator.clipboard.readText();
+    if (!text) return;
+
+    // Try parsing as mindcanvas clipboard data
+    try {
+      const data = JSON.parse(text);
+      if (data?.type === 'mindcanvas-clipboard' && Array.isArray(data.elements)) {
+        useHistoryStore.getState().pushState(useElementStore.getState().elements);
+        let maxZ = useElementStore.getState().getMaxZIndex();
+        const newIds: string[] = [];
+        for (const el of data.elements) {
+          maxZ++;
+          const newId = crypto.randomUUID();
+          newIds.push(newId);
+          useElementStore.getState().addElement({
+            ...el,
+            id: newId,
+            x: el.x + 20,
+            y: el.y + 20,
+            zIndex: maxZ,
+            createdAt: Date.now(),
+            updatedAt: Date.now(),
+          });
+        }
+        useToolStore.getState().setSelectedIds(newIds);
+        return;
+      }
+    } catch { /* not JSON — treat as plain text */ }
+
+    // Paste as a text element on the canvas
+    useHistoryStore.getState().pushState(useElementStore.getState().elements);
+    const center = getViewportCenter();
+    const { strokeColor, fontSize } = useToolStore.getState();
+    const newElement = createElement({
+      type: 'text',
+      x: center.x,
+      y: center.y,
+      text,
+      strokeColor,
+      fontSize,
+      zIndex: useElementStore.getState().getMaxZIndex() + 1,
+    });
+    useElementStore.getState().addElement(newElement);
+    useToolStore.getState().setActiveTool('select');
+    useToolStore.getState().setSelectedIds([newElement.id]);
+  } catch {
+    // Clipboard API not available or permission denied — try text-only fallback
+    try {
+      const text = await navigator.clipboard.readText();
+      if (!text) return;
+      try {
+        const data = JSON.parse(text);
+        if (data?.type === 'mindcanvas-clipboard' && Array.isArray(data.elements)) {
+          useHistoryStore.getState().pushState(useElementStore.getState().elements);
+          let maxZ = useElementStore.getState().getMaxZIndex();
+          const newIds: string[] = [];
+          for (const el of data.elements) {
+            maxZ++;
+            const newId = crypto.randomUUID();
+            newIds.push(newId);
+            useElementStore.getState().addElement({
+              ...el,
+              id: newId,
+              x: el.x + 20,
+              y: el.y + 20,
+              zIndex: maxZ,
+              createdAt: Date.now(),
+              updatedAt: Date.now(),
+            });
+          }
+          useToolStore.getState().setSelectedIds(newIds);
+          return;
+        }
+      } catch { /* not JSON */ }
+
+      useHistoryStore.getState().pushState(useElementStore.getState().elements);
+      const center = getViewportCenter();
+      const { strokeColor, fontSize } = useToolStore.getState();
+      const newElement = createElement({
+        type: 'text',
+        x: center.x,
+        y: center.y,
+        text,
+        strokeColor,
+        fontSize,
+        zIndex: useElementStore.getState().getMaxZIndex() + 1,
+      });
+      useElementStore.getState().addElement(newElement);
+      useToolStore.getState().setActiveTool('select');
+      useToolStore.getState().setSelectedIds([newElement.id]);
+    } catch { /* clipboard not available */ }
+  }
+}
 
 /**
  * Global keyboard shortcuts handler
@@ -94,35 +249,10 @@ export function useKeyboardShortcuts(onToggleShortcuts?: () => void) {
         return;
       }
 
-      // Ctrl+V: Paste
+      // Ctrl+V: Paste (images, text, or mindcanvas elements)
       if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
         e.preventDefault();
-        navigator.clipboard.readText().then((text) => {
-          try {
-            const data = JSON.parse(text);
-            if (data?.type === 'mindcanvas-clipboard' && Array.isArray(data.elements)) {
-              // Save snapshot for undo
-              useHistoryStore.getState().pushState(useElementStore.getState().elements);
-              let maxZ = useElementStore.getState().getMaxZIndex();
-              const newIds: string[] = [];
-              for (const el of data.elements) {
-                maxZ++;
-                const newId = crypto.randomUUID();
-                newIds.push(newId);
-                useElementStore.getState().addElement({
-                  ...el,
-                  id: newId,
-                  x: el.x + 20,
-                  y: el.y + 20,
-                  zIndex: maxZ,
-                  createdAt: Date.now(),
-                  updatedAt: Date.now(),
-                });
-              }
-              useToolStore.getState().setSelectedIds(newIds);
-            }
-          } catch { /* invalid clipboard data */ }
-        });
+        pasteFromClipboard();
         return;
       }
 

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useToolStore } from '../../store/toolStore';
 import { useElementStore } from '../../store/elementStore';
 import { useHistory } from '../../hooks/useHistory';
+import { pasteFromClipboard } from '../../hooks/useKeyboardShortcuts';
 
 interface ContextMenuProps {
   x: number;
@@ -63,30 +64,7 @@ export function ContextMenu({ x, y, onClose }: ContextMenuProps) {
   };
 
   const handlePaste = async () => {
-    try {
-      const text = await navigator.clipboard.readText();
-      const data = JSON.parse(text);
-      if (data?.type === 'mindcanvas-clipboard' && Array.isArray(data.elements)) {
-        saveSnapshot();
-        let maxZ = useElementStore.getState().getMaxZIndex();
-        const newIds: string[] = [];
-        for (const el of data.elements) {
-          maxZ++;
-          const newId = crypto.randomUUID();
-          newIds.push(newId);
-          useElementStore.getState().addElement({
-            ...el,
-            id: newId,
-            x: el.x + 20,
-            y: el.y + 20,
-            zIndex: maxZ,
-            createdAt: Date.now(),
-            updatedAt: Date.now(),
-          });
-        }
-        useToolStore.getState().setSelectedIds(newIds);
-      }
-    } catch { /* clipboard not available */ }
+    await pasteFromClipboard();
     onClose();
   };
 

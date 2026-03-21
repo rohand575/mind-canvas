@@ -2,6 +2,18 @@ import type { RoughCanvas } from 'roughjs/bin/canvas';
 import type { Options as RoughOptions } from 'roughjs/bin/core';
 import type { CanvasElement } from '../../types';
 
+// Cache loaded images so the render loop doesn't recreate them every frame
+const imageCache = new Map<string, HTMLImageElement>();
+
+function getCachedImage(src: string): HTMLImageElement | null {
+  const cached = imageCache.get(src);
+  if (cached) return cached;
+  const img = new Image();
+  img.src = src;
+  imageCache.set(src, img);
+  return img.complete ? img : null;
+}
+
 /**
  * Convert our strokeStyle to rough.js strokeLineDash
  */
@@ -140,6 +152,20 @@ export function renderElement(
           ...options,
           roughness: 0,
         });
+      }
+      break;
+
+    case 'image':
+      if (element.imageData) {
+        const img = getCachedImage(element.imageData);
+        if (img) {
+          ctx.drawImage(img, element.x, element.y, element.width, element.height);
+        } else {
+          // Image still loading — draw placeholder
+          ctx.strokeStyle = element.strokeColor;
+          ctx.lineWidth = 1;
+          ctx.strokeRect(element.x, element.y, element.width, element.height);
+        }
       }
       break;
 

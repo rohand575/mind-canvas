@@ -27,12 +27,6 @@ export function Tooltip({ content, children, delay = 400, position = 'top' }: To
     right: 'left-full top-1/2 -translate-y-1/2 ml-2',
   };
 
-  const arrowClasses = {
-    top: 'top-full left-1/2 -translate-x-1/2 border-t-gray-900 dark:border-t-gray-700 border-x-transparent border-b-transparent',
-    bottom: 'bottom-full left-1/2 -translate-x-1/2 border-b-gray-900 dark:border-b-gray-700 border-x-transparent border-t-transparent',
-    left: 'left-full top-1/2 -translate-y-1/2 border-l-gray-900 dark:border-l-gray-700 border-y-transparent border-r-transparent',
-    right: 'right-full top-1/2 -translate-y-1/2 border-r-gray-900 dark:border-r-gray-700 border-y-transparent border-l-transparent',
-  };
 
   return (
     <div
@@ -48,12 +42,9 @@ export function Tooltip({ content, children, delay = 400, position = 'top' }: To
           className={`absolute ${positionClasses[position]} z-[200] pointer-events-none`}
           role="tooltip"
         >
-          <div className="px-2.5 py-1.5 text-[11px] font-medium text-white bg-gray-800 dark:bg-gray-700 rounded-md shadow-md whitespace-nowrap animate-in fade-in zoom-in-95">
+          <div className="px-3 py-2 text-[13px] font-medium tracking-wide text-white bg-gray-900/90 dark:bg-gray-800/90 backdrop-blur-md rounded-lg shadow-lg shadow-black/20 ring-1 ring-white/10 whitespace-nowrap animate-in fade-in zoom-in-95">
             {content}
           </div>
-          <div
-            className={`absolute ${arrowClasses[position]} border-4`}
-          />
         </div>
       )}
     </div>
