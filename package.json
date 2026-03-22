@@ -1,10 +1,10 @@
 {
-  "name": "mind-canvas",
+  "name": "canvas",
   "private": true,
   "version": "1.0.0",
   "type": "module",
   "main": "electron/main.cjs",
-  "author": "MindCanvas",
+  "author": "Canvas",
   "description": "A local-first drawing and diagramming tool",
   "scripts": {
     "dev": "vite",
@@ -15,8 +15,8 @@
     "electron:build": "vite build && electron-builder --win"
   },
   "build": {
-    "appId": "com.mindcanvas.app",
-    "productName": "MindCanvas",
+    "appId": "com.canvas.app",
+    "productName": "Canvas",
     "directories": {
       "output": "release"
     },
@@ -38,7 +38,7 @@
       "oneClick": false,
       "perMachine": false,
       "allowToChangeInstallationDirectory": true,
-      "shortcutName": "MindCanvas"
+      "shortcutName": "Canvas"
     }
   },
   "dependencies": {

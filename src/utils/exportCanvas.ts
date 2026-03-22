@@ -60,7 +60,7 @@ export function exportAsPNG(
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `mindcanvas-${Date.now()}.png`;
+    a.download = `canvas-${Date.now()}.png`;
     a.click();
     URL.revokeObjectURL(url);
   }, 'image/png');
@@ -75,7 +75,7 @@ export function exportAsJSON(elements: CanvasElement[]): void {
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `mindcanvas-${Date.now()}.json`;
+  a.download = `canvas-${Date.now()}.json`;
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -145,7 +145,7 @@ export function exportAsSVG(
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `mindcanvas-${Date.now()}.svg`;
+  a.download = `canvas-${Date.now()}.svg`;
   a.click();
   URL.revokeObjectURL(url);
 }
@@ -217,7 +217,7 @@ export function exportProjectFile(
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `mindcanvas-project-${Date.now()}.mcv`;
+  a.download = `canvas-project-${Date.now()}.mcv`;
   a.click();
   URL.revokeObjectURL(url);
 }

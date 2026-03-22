@@ -27,7 +27,7 @@ export const SELECTION_PADDING = 4;
 
 // ─── Persistence ─────────────────────────────────────────────────
 
-export const DB_NAME = 'mindcanvas-db';
+export const DB_NAME = 'canvas-db';
 export const DB_VERSION = 1;
 export const STORE_NAME = 'canvases';
 export const AUTOSAVE_DEBOUNCE_MS = 500;

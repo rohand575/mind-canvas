@@ -1,4 +1,4 @@
-# Mind Canvas — Feature Roadmap
+# Canvas — Feature Roadmap
 
 ## Phase 1 — Wire Up Existing Code ✅
 - [x] Roughness control in StylePanel

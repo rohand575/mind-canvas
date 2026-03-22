@@ -57,7 +57,7 @@ export function ContextMenu({ x, y, onClose }: ContextMenuProps) {
     const { elements } = useElementStore.getState();
     const selected = elements.filter((el) => selectedIds.includes(el.id));
     if (selected.length > 0) {
-      const data = JSON.stringify({ type: 'mindcanvas-clipboard', elements: selected });
+      const data = JSON.stringify({ type: 'canvas-clipboard', elements: selected });
       navigator.clipboard.writeText(data);
     }
     onClose();

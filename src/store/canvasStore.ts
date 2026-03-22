@@ -28,7 +28,7 @@ interface CanvasStore extends CanvasState {
 // Load theme from localStorage on startup
 const getInitialTheme = (): Theme => {
   if (typeof window !== 'undefined') {
-    const saved = localStorage.getItem('mindcanvas-theme');
+    const saved = localStorage.getItem('canvas-theme');
     if (saved === 'dark' || saved === 'light') return saved;
   }
   return 'light';
@@ -92,12 +92,12 @@ export const useCanvasStore = create<CanvasStore>((set, get) => ({
 
   toggleTheme: () => {
     const newTheme = get().theme === 'light' ? 'dark' : 'light';
-    localStorage.setItem('mindcanvas-theme', newTheme);
+    localStorage.setItem('canvas-theme', newTheme);
     set({ theme: newTheme });
   },
 
   setTheme: (theme) => {
-    localStorage.setItem('mindcanvas-theme', theme);
+    localStorage.setItem('canvas-theme', theme);
     set({ theme });
   },
 

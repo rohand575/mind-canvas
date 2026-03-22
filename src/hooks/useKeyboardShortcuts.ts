@@ -33,7 +33,7 @@ function getViewportCenter() {
 }
 
 /**
- * Paste clipboard content: images, mindcanvas elements, or plain text
+ * Paste clipboard content: images, canvas elements, or plain text
  */
 export async function pasteFromClipboard() {
   try {
@@ -84,10 +84,10 @@ export async function pasteFromClipboard() {
     const text = await navigator.clipboard.readText();
     if (!text) return;
 
-    // Try parsing as mindcanvas clipboard data
+    // Try parsing as canvas clipboard data
     try {
       const data = JSON.parse(text);
-      if (data?.type === 'mindcanvas-clipboard' && Array.isArray(data.elements)) {
+      if (data?.type === 'canvas-clipboard' && Array.isArray(data.elements)) {
         useHistoryStore.getState().pushState(useElementStore.getState().elements);
         let maxZ = useElementStore.getState().getMaxZIndex();
         const newIds: string[] = [];
@@ -143,7 +143,7 @@ export async function pasteFromClipboard() {
       if (!text) return;
       try {
         const data = JSON.parse(text);
-        if (data?.type === 'mindcanvas-clipboard' && Array.isArray(data.elements)) {
+        if (data?.type === 'canvas-clipboard' && Array.isArray(data.elements)) {
           useHistoryStore.getState().pushState(useElementStore.getState().elements);
           let maxZ = useElementStore.getState().getMaxZIndex();
           const newIds: string[] = [];
@@ -324,13 +324,13 @@ export function useKeyboardShortcuts(onToggleShortcuts?: () => void) {
         const { elements } = useElementStore.getState();
         const selected = elements.filter((el) => selectedIds.includes(el.id));
         if (selected.length > 0) {
-          const data = JSON.stringify({ type: 'mindcanvas-clipboard', elements: selected });
+          const data = JSON.stringify({ type: 'canvas-clipboard', elements: selected });
           navigator.clipboard.writeText(data);
         }
         return;
       }
 
-      // Ctrl+V: Paste (images, text, or mindcanvas elements)
+      // Ctrl+V: Paste (images, text, or canvas elements)
       if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
         e.preventDefault();
         pasteFromClipboard();

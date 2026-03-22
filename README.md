@@ -1,8 +1,8 @@
-# MindCanvas
+# Canvas
 
 A local-first drawing and diagramming tool with a hand-drawn aesthetic. Built with React, TypeScript, and rough.js.
 
-![MindCanvas](https://img.shields.io/badge/Status-Phase%201-brightgreen)
+![Canvas](https://img.shields.io/badge/Status-Phase%201-brightgreen)
 
 ## Quick Start
 
