@@ -64,3 +64,11 @@ export const ROUGHNESS_LEVELS = [0, 1, 2, 3];
 // ─── Font Sizes ─────────────────────────────────────────────────
 
 export const FONT_SIZES = [12, 14, 16, 18, 20, 24, 28, 32, 40, 48, 64];
+
+// ─── Firestore ──────────────────────────────────────────────────
+
+export const FIRESTORE_CANVASES_COLLECTION = 'canvases';
+
+// ─── Sidebar ────────────────────────────────────────────────────
+
+export const SIDEBAR_WIDTH = 280;

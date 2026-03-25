@@ -75,6 +75,24 @@ export type ResizeHandle = 'nw' | 'ne' | 'sw' | 'se' | 'n' | 's' | 'e' | 'w';
 
 export type Theme = 'light' | 'dark';
 
+// ─── Canvas Document (multi-canvas) ──────────────────────────────
+
+export interface CanvasDocumentMeta {
+  id: string;
+  name: string;
+  updatedAt: number;
+  createdAt: number;
+}
+
+export interface CanvasDocument extends CanvasDocumentMeta {
+  ownerId: string;
+  elements: CanvasElement[];
+  canvasState: CanvasState & {
+    theme?: Theme;
+    showGrid?: boolean;
+  };
+}
+
 // ─── Export ──────────────────────────────────────────────────────
 
 export interface ExportOptions {
