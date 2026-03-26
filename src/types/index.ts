@@ -32,6 +32,9 @@ export interface CanvasElement {
   // For text elements
   text?: string;
   fontSize?: number;
+  // For code elements (text with syntax highlighting)
+  isCode?: boolean;
+  codeLanguage?: string;
   // For image elements
   imageData?: string;
   // Style

@@ -20,6 +20,8 @@ interface CreateElementOptions {
   height?: number;
   points?: Point[];
   text?: string;
+  isCode?: boolean;
+  codeLanguage?: string;
   imageData?: string;
   strokeColor?: string;
   fillColor?: string;
@@ -45,6 +47,8 @@ export function createElement(options: CreateElementOptions): CanvasElement {
     points: options.points,
     text: options.text,
     fontSize: options.type === 'text' ? (options.fontSize ?? DEFAULT_FONT_SIZE) : undefined,
+    isCode: options.isCode,
+    codeLanguage: options.codeLanguage,
     imageData: options.imageData,
     strokeColor: options.strokeColor ?? DEFAULT_STROKE_COLOR,
     fillColor: options.fillColor ?? DEFAULT_FILL_COLOR,

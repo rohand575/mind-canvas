@@ -546,20 +546,44 @@ export function Canvas() {
 
     editingElementIdRef.current = element.id;
 
+    const isCode = element.isCode ?? false;
+    const fontFamily = isCode
+      ? "'Fira Code', 'Cascadia Code', 'JetBrains Mono', 'Consolas', 'Monaco', monospace"
+      : "'Virgil', 'Segoe Print', 'Comic Sans MS', cursive";
+    const editFontSize = element.fontSize ?? (isCode ? 14 : 40);
+    const editLineHeight = isCode ? 1.5 : 1.3;
+
     textarea.style.display = 'block';
-    textarea.style.left = (element.x * zoom + offsetX) + 'px';
-    textarea.style.top = (element.y * zoom + offsetY) + 'px';
-    textarea.style.fontSize = ((element.fontSize ?? 40) * zoom) + 'px';
-    textarea.style.color = element.strokeColor;
+    textarea.style.left = ((element.x + (isCode ? 16 : 0)) * zoom + offsetX) + 'px';
+    textarea.style.top = ((element.y + (isCode ? 16 : 0)) * zoom + offsetY) + 'px';
+    textarea.style.fontSize = (editFontSize * zoom) + 'px';
+    textarea.style.fontFamily = fontFamily;
+    textarea.style.lineHeight = String(editLineHeight);
+    textarea.style.color = isCode ? '#cdd6f4' : element.strokeColor;
+    
+    // Set width and height to match the element being edited
+    const contentWidth = (element.width ?? 200) - (isCode ? 32 : 0); // Subtract padding for code
+    const contentHeight = (element.height ?? 100) - (isCode ? 32 : 0);
+    textarea.style.width = (contentWidth * zoom) + 'px';
+    textarea.style.height = (contentHeight * zoom) + 'px';
+    
+    if (isCode) {
+      textarea.style.background = '#1e1e2e';
+      textarea.style.borderRadius = '8px';
+      textarea.style.padding = '16px';
+      // For code blocks, include padding in total dimensions
+      textarea.style.width = ((element.width ?? 200) * zoom) + 'px';
+      textarea.style.height = ((element.height ?? 100) * zoom) + 'px';
+      textarea.style.boxSizing = 'border-box';
+    }
     textarea.value = element.text ?? '';
     textarea.focus();
     
     // Place cursor at click position instead of selecting all
     if (clickPoint) {
       const text = element.text ?? '';
-      const fontSize = element.fontSize ?? 40;
-      const lineHeight = fontSize * 1.3;
-      const relY = clickPoint.y - element.y;
+      const lineHeight = editFontSize * editLineHeight;
+      const relY = clickPoint.y - element.y - (isCode ? 16 : 0);
       const lineIndex = Math.max(0, Math.floor(relY / lineHeight));
       const lines = text.split('\n');
       
@@ -574,8 +598,8 @@ export function Canvas() {
         if (canvas) {
           const ctx = canvas.getContext('2d');
           if (ctx) {
-            ctx.font = `${fontSize}px 'Virgil', 'Segoe Print', 'Comic Sans MS', cursive`;
-            const relX = clickPoint.x - element.x;
+            ctx.font = `${editFontSize}px ${fontFamily}`;
+            const relX = clickPoint.x - element.x - (isCode ? 16 : 0);
             const line = lines[lineIndex];
             // Find character position by measuring text width
             for (let i = 0; i <= line.length; i++) {
@@ -607,11 +631,19 @@ export function Canvas() {
         if (canvas) {
           const ctx = canvas.getContext('2d');
           if (ctx) {
-            ctx.font = `${element.fontSize ?? 40}px 'Virgil', 'Segoe Print', 'Comic Sans MS', cursive`;
-            const lines = text.split('\n');
-            const maxWidth = Math.max(...lines.map((l) => ctx.measureText(l).width));
-            updates.width = maxWidth;
-            updates.height = lines.length * Math.round((element.fontSize ?? 40) * 1.3);
+            if (isCode) {
+              ctx.font = `${editFontSize}px ${fontFamily}`;
+              const lines = text.split('\n');
+              const maxWidth = Math.max(...lines.map((l) => ctx.measureText(l).width));
+              updates.width = maxWidth + 32; // CODE_PADDING * 2
+              updates.height = lines.length * Math.round(editFontSize * 1.5) + 32;
+            } else {
+              ctx.font = `${element.fontSize ?? 40}px 'Virgil', 'Segoe Print', 'Comic Sans MS', cursive`;
+              const lines = text.split('\n');
+              const maxWidth = Math.max(...lines.map((l) => ctx.measureText(l).width));
+              updates.width = maxWidth;
+              updates.height = lines.length * Math.round((element.fontSize ?? 40) * 1.3);
+            }
           }
         }
         useElementStore.getState().updateElement(element.id, updates);
@@ -619,6 +651,17 @@ export function Canvas() {
         useElementStore.getState().removeElements([element.id]);
       }
       textarea.style.display = 'none';
+      textarea.style.width = '';
+      textarea.style.height = '';
+      // Reset code-specific styles
+      if (isCode) {
+        textarea.style.background = 'transparent';
+        textarea.style.borderRadius = '';
+        textarea.style.padding = '';
+        textarea.style.boxSizing = '';
+        textarea.style.fontFamily = "'Virgil', 'Segoe Print', 'Comic Sans MS', cursive";
+      }
+      textarea.style.lineHeight = '1.3';
       editingElementIdRef.current = null;
       interactionRef.current = { type: 'none' };
       // Cleanup listeners
@@ -795,6 +838,10 @@ export function Canvas() {
         }}
         onInput={(e) => {
           const ta = e.currentTarget;
+          const isCodeEdit = ta.style.background === 'rgb(30, 30, 46)'; // #1e1e2e
+          const fontFamily = ta.style.fontFamily;
+          const padding = isCodeEdit ? 32 : 0; // 16px padding on each side for code
+          
           // Auto-grow height
           ta.style.height = 'auto';
           ta.style.height = ta.scrollHeight + 'px';
@@ -804,12 +851,12 @@ export function Canvas() {
           if (canvas) {
             const ctx = canvas.getContext('2d');
             if (ctx) {
-              ctx.font = ta.style.fontSize + " 'Virgil', 'Segoe Print', 'Comic Sans MS', cursive";
+              ctx.font = ta.style.fontSize + ' ' + fontFamily;
               const maxWidth = Math.max(20, ...lines.map(line => ctx.measureText(line || ' ').width));
-              ta.style.width = (maxWidth + 20) + 'px';
+              ta.style.width = (maxWidth + 20 + padding) + 'px';
               
               // Auto-pan canvas if text extends near edge
-              const taRight = parseFloat(ta.style.left) + maxWidth + 20;
+              const taRight = parseFloat(ta.style.left) + maxWidth + 20 + padding;
               const screenRight = window.innerWidth - 80; // Leave space for right toolbar
               if (taRight > screenRight) {
                 const panAmount = taRight - screenRight + 50;

@@ -36,7 +36,7 @@ export function Sidebar() {
 
       {/* Sidebar panel */}
       <div
-        className={`fixed top-0 left-0 z-50 h-full flex flex-col bg-white/95 dark:bg-gray-900/95 backdrop-blur-xl shadow-2xl shadow-black/[0.06] dark:shadow-black/30 ring-1 ring-gray-950/[0.05] dark:ring-white/[0.06] transition-transform duration-300 ease-out`}
+        className={`fixed top-0 left-0 z-50 h-full flex flex-col bg-white/98 dark:bg-gray-900/98 backdrop-blur-2xl shadow-2xl shadow-black/15 dark:shadow-black/40 ring-1 ring-black/[0.04] dark:ring-white/[0.08] border-r border-gray-200/50 dark:border-white/[0.05] transition-transform duration-300 ease-out`}
         style={{ width: SIDEBAR_WIDTH }}
         data-sidebar
       >

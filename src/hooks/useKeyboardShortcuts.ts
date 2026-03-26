@@ -8,6 +8,7 @@ import { createElement } from '../utils/createElement';
 import { COLOR_PALETTE, FONT_SIZES } from '../constants';
 import type { Tool } from '../types';
 import { useHistory } from './useHistory';
+import { detectCode, CODE_FONT, CODE_FONT_SIZE, CODE_LINE_HEIGHT, CODE_PADDING } from '../utils/codeDetection';
 
 const KEY_TOOL_MAP: Record<string, Tool> = {
   v: 'select',
@@ -110,32 +111,8 @@ export async function pasteFromClipboard() {
       }
     } catch { /* not JSON — treat as plain text */ }
 
-    // Paste as a text element on the canvas
-    useHistoryStore.getState().pushState(useElementStore.getState().elements);
-    const center = getViewportCenter();
-    const { strokeColor, fontSize } = useToolStore.getState();
-    const newElement = createElement({
-      type: 'text',
-      x: center.x,
-      y: center.y,
-      text,
-      strokeColor,
-      fontSize,
-      zIndex: useElementStore.getState().getMaxZIndex() + 1,
-    });
-    // Measure text dimensions using an offscreen canvas
-    const measureCanvas = document.createElement('canvas');
-    const measureCtx = measureCanvas.getContext('2d');
-    if (measureCtx) {
-      measureCtx.font = `${fontSize}px 'Virgil', 'Segoe Print', 'Comic Sans MS', cursive`;
-      const lines = text.split('\n');
-      const maxWidth = Math.max(...lines.map((l) => measureCtx.measureText(l).width));
-      newElement.width = maxWidth;
-      newElement.height = lines.length * Math.round(fontSize * 1.3);
-    }
-    useElementStore.getState().addElement(newElement);
-    useToolStore.getState().setActiveTool('select');
-    useToolStore.getState().setSelectedIds([newElement.id]);
+    // Paste as text or code element on the canvas
+    pasteTextOrCode(text);
   } catch {
     // Clipboard API not available or permission denied — try text-only fallback
     try {
@@ -166,32 +143,78 @@ export async function pasteFromClipboard() {
         }
       } catch { /* not JSON */ }
 
-      useHistoryStore.getState().pushState(useElementStore.getState().elements);
-      const center = getViewportCenter();
-      const { strokeColor, fontSize } = useToolStore.getState();
-      const newElement = createElement({
-        type: 'text',
-        x: center.x,
-        y: center.y,
-        text,
-        strokeColor,
-        fontSize,
-        zIndex: useElementStore.getState().getMaxZIndex() + 1,
-      });
-      // Measure text dimensions using an offscreen canvas
-      const measureCanvas = document.createElement('canvas');
-      const measureCtx = measureCanvas.getContext('2d');
-      if (measureCtx) {
-        measureCtx.font = `${fontSize}px 'Virgil', 'Segoe Print', 'Comic Sans MS', cursive`;
-        const lines = text.split('\n');
-        const maxWidth = Math.max(...lines.map((l) => measureCtx.measureText(l).width));
-        newElement.width = maxWidth;
-        newElement.height = lines.length * Math.round(fontSize * 1.3);
-      }
-      useElementStore.getState().addElement(newElement);
-      useToolStore.getState().setActiveTool('select');
-      useToolStore.getState().setSelectedIds([newElement.id]);
+      pasteTextOrCode(text);
     } catch { /* clipboard not available */ }
+  }
+}
+
+/**
+ * Create a text or code element from pasted text, auto-detecting code content
+ */
+function pasteTextOrCode(text: string) {
+  useHistoryStore.getState().pushState(useElementStore.getState().elements);
+  const center = getViewportCenter();
+  const { strokeColor, fontSize } = useToolStore.getState();
+
+  const detection = detectCode(text);
+
+  if (detection.isCode) {
+    // Create a code element with monospace font
+    const codeFontSize = CODE_FONT_SIZE;
+    const lineHeight = codeFontSize * CODE_LINE_HEIGHT;
+    const lines = text.split('\n');
+
+    // Measure text dimensions using monospace font
+    const measureCanvas = document.createElement('canvas');
+    const measureCtx = measureCanvas.getContext('2d');
+    let maxWidth = 300;
+    if (measureCtx) {
+      measureCtx.font = `${codeFontSize}px ${CODE_FONT}`;
+      maxWidth = Math.max(...lines.map((l) => measureCtx.measureText(l).width));
+    }
+
+    const totalWidth = maxWidth + CODE_PADDING * 2;
+    const totalHeight = lines.length * lineHeight + CODE_PADDING * 2;
+
+    const newElement = createElement({
+      type: 'text',
+      x: center.x - totalWidth / 2,
+      y: center.y - totalHeight / 2,
+      width: totalWidth,
+      height: totalHeight,
+      text,
+      strokeColor,
+      fontSize: codeFontSize,
+      isCode: true,
+      codeLanguage: detection.language,
+      zIndex: useElementStore.getState().getMaxZIndex() + 1,
+    });
+    useElementStore.getState().addElement(newElement);
+    useToolStore.getState().setActiveTool('select');
+    useToolStore.getState().setSelectedIds([newElement.id]);
+  } else {
+    // Create a regular text element
+    const newElement = createElement({
+      type: 'text',
+      x: center.x,
+      y: center.y,
+      text,
+      strokeColor,
+      fontSize,
+      zIndex: useElementStore.getState().getMaxZIndex() + 1,
+    });
+    const measureCanvas = document.createElement('canvas');
+    const measureCtx = measureCanvas.getContext('2d');
+    if (measureCtx) {
+      measureCtx.font = `${fontSize}px 'Virgil', 'Segoe Print', 'Comic Sans MS', cursive`;
+      const lines = text.split('\n');
+      const maxWidth = Math.max(...lines.map((l) => measureCtx.measureText(l).width));
+      newElement.width = maxWidth;
+      newElement.height = lines.length * Math.round(fontSize * 1.3);
+    }
+    useElementStore.getState().addElement(newElement);
+    useToolStore.getState().setActiveTool('select');
+    useToolStore.getState().setSelectedIds([newElement.id]);
   }
 }
 

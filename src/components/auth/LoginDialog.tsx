@@ -61,9 +61,9 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center" onClick={onClose}>
-      <div className="absolute inset-0 bg-black/40 backdrop-blur-md" />
+      <div className="absolute inset-0 bg-black/50 backdrop-blur-xl" />
       <div
-        className="relative bg-white dark:bg-gray-900 rounded-2xl shadow-2xl shadow-black/[0.12] dark:shadow-black/40 ring-1 ring-gray-950/[0.05] dark:ring-white/[0.1] px-8 py-8 max-w-sm w-full mx-6 animate-in fade-in zoom-in-95"
+        className="relative bg-white dark:bg-gray-900 rounded-3xl shadow-2xl shadow-black/25 dark:shadow-black/50 ring-1 ring-black/[0.05] dark:ring-white/[0.1] px-8 py-8 max-w-sm w-full mx-6 animate-in fade-in zoom-in-95 border border-white/50 dark:border-white/[0.05]"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Close button */}
@@ -76,10 +76,10 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
           </svg>
         </button>
 
-        <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100 mb-1">
+        <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-1.5 tracking-tight">
           {isSignUp ? 'Create account' : 'Sign in'}
         </h2>
-        <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
+        <p className="text-sm text-gray-500 dark:text-gray-400 mb-7">
           {isSignUp ? 'Start saving your canvases to the cloud' : 'Access your saved canvases'}
         </p>
 
@@ -87,7 +87,7 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
         <button
           onClick={handleGoogle}
           disabled={loading}
-          className="w-full flex items-center justify-center gap-3 px-4 py-2.5 rounded-xl ring-1 ring-gray-200 dark:ring-gray-700 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors duration-150 text-sm font-medium text-gray-700 dark:text-gray-300 disabled:opacity-50"
+          className="w-full flex items-center justify-center gap-3 px-4 py-3 rounded-xl bg-white dark:bg-gray-800 shadow-sm hover:shadow-md ring-1 ring-gray-200/80 dark:ring-gray-600 hover:ring-gray-300 dark:hover:ring-gray-500 transition-all duration-200 text-sm font-semibold text-gray-700 dark:text-gray-200 disabled:opacity-50 active:scale-[0.98]"
         >
           <svg width="18" height="18" viewBox="0 0 24 24">
             <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/>
@@ -113,7 +113,7 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
             onChange={(e) => setEmail(e.target.value)}
             required
             autoComplete="email"
-            className="w-full px-3.5 py-2.5 rounded-xl bg-gray-50 dark:bg-gray-800 ring-1 ring-gray-200 dark:ring-gray-700 text-sm text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/60 transition-shadow"
+            className="w-full px-4 py-3 rounded-xl bg-gray-50/80 dark:bg-gray-800/80 border border-gray-200 dark:border-gray-700 text-sm text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-400 transition-all duration-200"
           />
           <input
             type="password"
@@ -123,7 +123,7 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
             required
             minLength={6}
             autoComplete={isSignUp ? 'new-password' : 'current-password'}
-            className="w-full px-3.5 py-2.5 rounded-xl bg-gray-50 dark:bg-gray-800 ring-1 ring-gray-200 dark:ring-gray-700 text-sm text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/60 transition-shadow"
+            className="w-full px-4 py-3 rounded-xl bg-gray-50/80 dark:bg-gray-800/80 border border-gray-200 dark:border-gray-700 text-sm text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 focus:border-indigo-400 transition-all duration-200"
           />
 
           {error && (
@@ -133,7 +133,7 @@ export function LoginDialog({ open, onClose }: LoginDialogProps) {
           <button
             type="submit"
             disabled={loading}
-            className="w-full py-2.5 rounded-xl bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-medium transition-colors duration-150 disabled:opacity-50"
+            className="w-full py-3 rounded-xl bg-gradient-to-b from-indigo-500 to-indigo-600 hover:from-indigo-600 hover:to-indigo-700 text-white text-sm font-semibold shadow-lg shadow-indigo-500/30 hover:shadow-xl hover:shadow-indigo-500/40 transition-all duration-200 disabled:opacity-50 active:scale-[0.98]"
           >
             {loading ? 'Please wait…' : isSignUp ? 'Sign up' : 'Sign in'}
           </button>

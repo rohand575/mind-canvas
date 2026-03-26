@@ -1,6 +1,7 @@
 import type { RoughCanvas } from 'roughjs/bin/canvas';
 import type { Options as RoughOptions } from 'roughjs/bin/core';
 import type { CanvasElement } from '../../types';
+import { tokenizeLine, getTokenColor, CODE_THEME_DARK, CODE_THEME_LIGHT, CODE_FONT, CODE_LINE_HEIGHT, CODE_PADDING, CODE_BORDER_RADIUS } from '../../utils/codeDetection';
 
 // Cache loaded images so the render loop doesn't recreate them every frame
 const imageCache = new Map<string, HTMLImageElement>();
@@ -170,18 +171,90 @@ export function renderElement(
       break;
 
     case 'text':
-      ctx.font = `${element.fontSize ?? 40}px 'Virgil', 'Segoe Print', 'Comic Sans MS', cursive`;
-      ctx.fillStyle = element.strokeColor;
-      ctx.textBaseline = 'top';
-      const lines = (element.text ?? '').split('\n');
-      const lineHeight = (element.fontSize ?? 40) * 1.3;
-      lines.forEach((line, i) => {
-        ctx.fillText(line, element.x, element.y + i * lineHeight);
-      });
+      if (element.isCode) {
+        renderCodeBlock(ctx, element);
+      } else {
+        ctx.font = `${element.fontSize ?? 40}px 'Virgil', 'Segoe Print', 'Comic Sans MS', cursive`;
+        ctx.fillStyle = element.strokeColor;
+        ctx.textBaseline = 'top';
+        const lines = (element.text ?? '').split('\n');
+        const lineHeight = (element.fontSize ?? 40) * 1.3;
+        lines.forEach((line, i) => {
+          ctx.fillText(line, element.x, element.y + i * lineHeight);
+        });
+      }
       break;
   }
 
   ctx.restore();
+}
+
+/**
+ * Renders a code block with syntax highlighting, rounded background, and monospace font.
+ */
+function renderCodeBlock(ctx: CanvasRenderingContext2D, element: CanvasElement) {
+  const fontSize = element.fontSize ?? 14;
+  const lineHeight = fontSize * CODE_LINE_HEIGHT;
+  const lines = (element.text ?? '').split('\n');
+  const language = element.codeLanguage ?? 'code';
+
+  // Detect theme from background brightness (use dark theme by default for code)
+  const theme = CODE_THEME_DARK;
+
+  const x = element.x;
+  const y = element.y;
+  const w = element.width;
+  const h = element.height;
+
+  // Draw rounded background
+  ctx.fillStyle = theme.background;
+  ctx.beginPath();
+  const r = CODE_BORDER_RADIUS;
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+  ctx.fill();
+
+  // Draw subtle border
+  ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+
+  // Draw language badge
+  if (language && language !== 'code') {
+    ctx.font = `${Math.max(10, fontSize - 2)}px ${CODE_FONT}`;
+    ctx.fillStyle = 'rgba(255,255,255,0.3)';
+    ctx.textBaseline = 'top';
+    ctx.textAlign = 'right';
+    ctx.fillText(language, x + w - CODE_PADDING, y + 6);
+    ctx.textAlign = 'left';
+  }
+
+  // Render each line with syntax highlighting
+  ctx.font = `${fontSize}px ${CODE_FONT}`;
+  ctx.textBaseline = 'top';
+
+  const textX = x + CODE_PADDING;
+  const textStartY = y + CODE_PADDING;
+
+  lines.forEach((line, lineIdx) => {
+    const tokens = tokenizeLine(line, language);
+    let cursorX = textX;
+    const cursorY = textStartY + lineIdx * lineHeight;
+
+    for (const token of tokens) {
+      ctx.fillStyle = getTokenColor(token.type, theme);
+      ctx.fillText(token.text, cursorX, cursorY);
+      cursorX += ctx.measureText(token.text).width;
+    }
+  });
 }
 
 /**

@@ -33,9 +33,9 @@ function Popover({
     <div ref={ref} className="relative">
       <div onClick={() => setOpen(!open)}>{trigger}</div>
       <div
-        className={`absolute top-full mt-2.5 bg-white/95 dark:bg-gray-900/95 backdrop-blur-lg rounded-xl shadow-lg shadow-black/[0.06] dark:shadow-black/25 ring-1 ring-gray-950/[0.05] dark:ring-white/[0.08] p-3 z-50 min-w-max
-          transition-all duration-150 ease-out origin-top
-          ${open ? 'opacity-100 scale-100 translate-y-0' : 'opacity-0 scale-[0.97] -translate-y-1 pointer-events-none'}
+        className={`absolute top-full mt-3 bg-white/98 dark:bg-gray-900/98 backdrop-blur-xl rounded-2xl shadow-2xl shadow-black/15 dark:shadow-black/40 ring-1 ring-black/[0.04] dark:ring-white/[0.08] border border-white/60 dark:border-white/[0.05] p-4 z-50 min-w-max
+          transition-all duration-200 ease-out origin-top
+          ${open ? 'opacity-100 scale-100 translate-y-0' : 'opacity-0 scale-[0.95] -translate-y-2 pointer-events-none'}
           ${align === 'center' ? 'left-1/2 -translate-x-1/2' : 'left-0'}
         `}
       >
@@ -61,15 +61,15 @@ function SegmentGroup<T extends string | number>({
   title?: string;
 }) {
   return (
-    <div className="flex bg-gray-500/[0.06] dark:bg-white/[0.06] rounded-lg p-0.5 gap-0.5" title={title}>
+    <div className="flex bg-gray-100/80 dark:bg-white/[0.06] rounded-xl p-1 gap-1" title={title}>
       {options.map((opt) => (
         <button
           key={String(opt)}
           onClick={() => onChange(opt)}
-          className={`w-9 h-9 flex items-center justify-center rounded-md transition-all duration-150 ${
+          className={`w-10 h-10 flex items-center justify-center rounded-lg transition-all duration-200 ${
             value === opt
-              ? 'bg-white dark:bg-gray-700 shadow-[0_1px_2px_rgba(0,0,0,0.04)] text-gray-900 dark:text-gray-100'
-              : 'text-gray-400 dark:text-gray-500 hover:text-gray-500 dark:hover:text-gray-400'
+              ? 'bg-white dark:bg-gray-700 shadow-md shadow-black/[0.06] text-gray-900 dark:text-gray-100 ring-1 ring-black/[0.03]'
+              : 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-white/50 dark:hover:bg-white/[0.04]'
           }`}
         >
           {renderOption(opt, value === opt)}
