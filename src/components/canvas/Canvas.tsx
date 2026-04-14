@@ -311,9 +311,15 @@ export function Canvas() {
       } else if (activeTool === 'text') {
         // Prevent canvas from stealing focus from the textarea
         e.preventDefault();
-        // Show text input at click position
+        // If clicking on an existing text element, open it for editing
+        const sortedDescText = [...elements].sort((a, b) => b.zIndex - a.zIndex);
+        const hitText = sortedDescText.find((el) => el.type === 'text' && hitTestElement(canvasPoint, el));
         interactionRef.current = { type: 'text-input' };
-        showTextInput(canvasPoint);
+        if (hitText) {
+          showTextInputForEdit(hitText, canvasPoint);
+        } else {
+          showTextInput(canvasPoint);
+        }
       } else {
         // Drawing mode
         saveSnapshot();
@@ -505,6 +511,14 @@ export function Canvas() {
 
     if (activeTool === 'hand' || isPanning || isSpacePressed.current) {
       canvas.style.cursor = isPanning ? 'grabbing' : 'grab';
+      return;
+    }
+
+    if (activeTool === 'text') {
+      const { elements: textElements } = useElementStore.getState();
+      const sortedDescText = [...textElements].sort((a, b) => b.zIndex - a.zIndex);
+      const hoveredText = sortedDescText.find((el) => el.type === 'text' && hitTestElement(canvasPoint, el));
+      canvas.style.cursor = hoveredText ? 'text' : 'crosshair';
       return;
     }
 

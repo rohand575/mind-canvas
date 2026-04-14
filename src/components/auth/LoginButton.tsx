@@ -16,7 +16,7 @@ export function LoginButton() {
     <>
       <button
         onClick={() => setDialogOpen(true)}
-        className="px-4 py-2 rounded-xl bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-medium transition-colors duration-150 shadow-sm"
+        className="px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-500 to-violet-600 hover:from-indigo-600 hover:to-violet-700 text-white text-sm font-medium transition-all duration-150 shadow-lg shadow-indigo-500/30 active:scale-[0.96]"
       >
         Sign in
       </button>
