@@ -1,7 +1,7 @@
 import type { RoughCanvas } from 'roughjs/bin/canvas';
 import type { Options as RoughOptions } from 'roughjs/bin/core';
 import type { CanvasElement } from '../../types';
-import { tokenizeLine, getTokenColor, CODE_THEME_DARK, CODE_THEME_LIGHT, CODE_FONT, CODE_LINE_HEIGHT, CODE_PADDING, CODE_BORDER_RADIUS } from '../../utils/codeDetection';
+import { tokenizeLine, getTokenColor, CODE_THEME_DARK, CODE_FONT, CODE_LINE_HEIGHT, CODE_PADDING, CODE_BORDER_RADIUS } from '../../utils/codeDetection';
 
 // Cache loaded images so the render loop doesn't recreate them every frame
 const imageCache = new Map<string, HTMLImageElement>();
