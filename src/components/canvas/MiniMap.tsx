@@ -15,11 +15,15 @@ interface Transform {
   mmOffY: number;
 }
 
+const HIDE_DELAY = 1800; // ms of inactivity before fading out
+
 export function MiniMap() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const transformRef = useRef<Transform | null>(null);
   const isDraggingRef = useRef(false);
+  const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [collapsed, setCollapsed] = useState(false);
+  const [visible, setVisible] = useState(false);
 
   const draw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -197,6 +201,39 @@ export function MiniMap() {
     };
   }, [draw, collapsed]);
 
+  // Show on movement, auto-hide after inactivity
+  const scheduleHide = useCallback(() => {
+    if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+    hideTimerRef.current = setTimeout(() => setVisible(false), HIDE_DELAY);
+  }, []);
+
+  const showMap = useCallback(() => {
+    setVisible(true);
+    scheduleHide();
+  }, [scheduleHide]);
+
+  useEffect(() => {
+    if (collapsed) return;
+    const { offsetX, offsetY, zoom } = useCanvasStore.getState();
+    let prev = { offsetX, offsetY, zoom };
+
+    const unsub = useCanvasStore.subscribe((state) => {
+      if (
+        state.offsetX !== prev.offsetX ||
+        state.offsetY !== prev.offsetY ||
+        state.zoom !== prev.zoom
+      ) {
+        prev = { offsetX: state.offsetX, offsetY: state.offsetY, zoom: state.zoom };
+        showMap();
+      }
+    });
+
+    return () => {
+      unsub();
+      if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+    };
+  }, [collapsed, showMap]);
+
   const navigate = useCallback((clientX: number, clientY: number) => {
     const canvas = canvasRef.current;
     const t = transformRef.current;
@@ -236,12 +273,25 @@ export function MiniMap() {
   const isDark = theme === 'dark';
   const [hovered, setHovered] = useState(false);
 
+  const handleMouseEnter = useCallback(() => {
+    setHovered(true);
+    // Pause hide timer while hovering
+    if (hideTimerRef.current) clearTimeout(hideTimerRef.current);
+    setVisible(true);
+  }, []);
+
+  const handleMouseLeave = useCallback(() => {
+    setHovered(false);
+    // Resume hide timer on leave
+    scheduleHide();
+  }, [scheduleHide]);
+
   return (
     <div
       className="absolute bottom-5 left-5 z-40 select-none"
       style={{ width: collapsed ? 'auto' : MM_W }}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
     >
       {collapsed ? (
         /* Collapsed: tiny ghost icon button */
@@ -264,7 +314,17 @@ export function MiniMap() {
         </button>
       ) : (
         /* Expanded: clean borderless panel */
-        <div className="relative">
+        <div
+          className="relative"
+          style={{
+            opacity: visible ? 1 : 0,
+            transform: visible ? 'translateY(0) scale(1)' : 'translateY(6px) scale(0.97)',
+            transition: visible
+              ? 'opacity 0.22s ease-out, transform 0.22s ease-out'
+              : 'opacity 0.4s ease-in, transform 0.4s ease-in',
+            pointerEvents: visible ? 'auto' : 'none',
+          }}
+        >
           <div
             className={`
               rounded-xl overflow-hidden
