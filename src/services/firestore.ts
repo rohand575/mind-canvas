@@ -78,18 +78,22 @@ export function subscribeToUserCanvases(
     where('ownerId', '==', uid),
     orderBy('updatedAt', 'desc'),
   );
-  return onSnapshot(q, (snapshot) => {
-    const list = snapshot.docs.map((d) => {
-      const data = d.data();
-      return {
-        id: d.id,
-        name: data.name,
-        updatedAt: data.updatedAt,
-        createdAt: data.createdAt,
-      } as CanvasDocumentMeta;
-    });
-    callback(list);
-  });
+  return onSnapshot(
+    q,
+    (snapshot) => {
+      const list = snapshot.docs.map((d) => {
+        const data = d.data();
+        return {
+          id: d.id,
+          name: data.name,
+          updatedAt: data.updatedAt,
+          createdAt: data.createdAt,
+        } as CanvasDocumentMeta;
+      });
+      callback(list);
+    },
+    (err) => console.error('[Firestore] canvas list subscription error:', err),
+  );
 }
 
 /**
@@ -102,11 +106,15 @@ export function subscribeToCanvas(
   callback: (canvas: CanvasDocument | null) => void,
 ): () => void {
   const docRef = doc(db, FIRESTORE_CANVASES_COLLECTION, canvasId);
-  return onSnapshot(docRef, (snapshot) => {
-    if (!snapshot.exists()) {
-      callback(null);
-      return;
-    }
-    callback({ id: snapshot.id, ...snapshot.data() } as CanvasDocument);
-  });
+  return onSnapshot(
+    docRef,
+    (snapshot) => {
+      if (!snapshot.exists()) {
+        callback(null);
+        return;
+      }
+      callback({ id: snapshot.id, ...snapshot.data() } as CanvasDocument);
+    },
+    (err) => console.error('[Firestore] canvas document subscription error:', err),
+  );
 }

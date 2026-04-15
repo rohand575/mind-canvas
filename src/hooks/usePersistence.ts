@@ -7,25 +7,26 @@ import { saveCanvas, loadCanvas } from '../utils/persistence';
 import { AUTOSAVE_DEBOUNCE_MS } from '../constants';
 
 /**
- * Dual-mode persistence hook:
- * - Guest users: autosave to IndexedDB (original behavior)
- * - Signed-in users with an active canvas: autosave to Firestore
+ * Dual-mode persistence:
+ * - Guest:       debounced autosave to IndexedDB
+ * - Signed-in:   debounced autosave to Firestore via saveCurrentCanvas()
+ *
+ * The debounce timer is cleared and restarted on every element/canvas change,
+ * so only the final state within any 500 ms window is written.
  */
 export function usePersistence() {
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isLoadedRef = useRef(false);
 
-  const debouncedSave = useCallback(() => {
+  const scheduleSave = useCallback(() => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => {
       const user = useAuthStore.getState().user;
       const { currentCanvasId } = useDocumentStore.getState();
 
       if (user && currentCanvasId) {
-        // Signed-in user with active canvas → save to Firestore
         useDocumentStore.getState().saveCurrentCanvas().catch(console.error);
-      } else {
-        // Guest → save to IndexedDB
+      } else if (!user) {
         const { elements } = useElementStore.getState();
         const { offsetX, offsetY, zoom } = useCanvasStore.getState();
         saveCanvas(elements, { offsetX, offsetY, zoom }).catch(console.error);
@@ -33,13 +34,10 @@ export function usePersistence() {
     }, AUTOSAVE_DEBOUNCE_MS);
   }, []);
 
-  // Restore guest canvas from IndexedDB on mount (only if not signed in)
+  // On mount: restore guest canvas from IndexedDB (signed-in users skip this)
   useEffect(() => {
-    const { initialized } = useAuthStore.getState();
-
     const restore = () => {
       if (useAuthStore.getState().user) {
-        // Signed-in users don't auto-load from IndexedDB
         isLoadedRef.current = true;
         return;
       }
@@ -54,36 +52,30 @@ export function usePersistence() {
         .catch(console.error);
     };
 
+    const { initialized } = useAuthStore.getState();
     if (initialized) {
       restore();
     } else {
-      // Wait for Firebase auth to initialize before deciding
       const unsub = useAuthStore.subscribe((state) => {
-        if (state.initialized) {
-          unsub();
-          restore();
-        }
+        if (state.initialized) { unsub(); restore(); }
       });
       return unsub;
     }
   }, []);
 
-  // Subscribe to element changes for auto-save
+  // Autosave on element changes
   useEffect(() => {
     const unsub = useElementStore.subscribe(() => {
-      if (isLoadedRef.current) debouncedSave();
+      if (isLoadedRef.current) scheduleSave();
     });
     return unsub;
-  }, [debouncedSave]);
+  }, [scheduleSave]);
 
-  // Subscribe to canvas state changes for auto-save
+  // Autosave on canvas pan/zoom changes
   useEffect(() => {
-    const unsub = useCanvasStore.subscribe(
-      (state) => {
-        if (isLoadedRef.current) debouncedSave();
-        return [state.offsetX, state.offsetY, state.zoom];
-      },
-    );
+    const unsub = useCanvasStore.subscribe(() => {
+      if (isLoadedRef.current) scheduleSave();
+    });
     return unsub;
-  }, [debouncedSave]);
+  }, [scheduleSave]);
 }
