@@ -12,6 +12,7 @@ import { hitTestElement, getResizeHandleAtPoint, normalizeBounds, getElementBoun
 import { createElement } from '../../utils/createElement';
 import { GRID_SIZE } from '../../constants';
 import { ContextMenu } from './ContextMenu';
+import { FindBar } from './FindBar';
 import type { CanvasElement, Point, ResizeHandle, Bounds } from '../../types';
 
 function snapToGridValue(val: number, gridSize: number): number {
@@ -42,9 +43,105 @@ export function Canvas() {
   const editingElementIdRef = useRef<string | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
 
+  // ─── In-element find (Ctrl+F while editing) ───────────────────
+  const findBarActiveRef = useRef(false); // mirrors findActive, readable in closures
+  const [findActive, setFindActive] = useState(false);
+  const [findQuery, setFindQuery] = useState('');
+  const [findMatches, setFindMatches] = useState<number[]>([]);
+  const [findIdx, setFindIdx] = useState(0);
+
   const { handleWheel, handleKeyDown, handleKeyUp, startPan, startRightClickPan, movePan, endPan, isSpacePressed } =
     useCanvasInteraction();
   const { saveSnapshot } = useHistory();
+
+  // ─── Find helpers ─────────────────────────────────────────────
+  const computeFindMatches = useCallback((query: string, text: string): number[] => {
+    if (!query) return [];
+    const result: number[] = [];
+    const lower = text.toLowerCase();
+    const q = query.toLowerCase();
+    let idx = 0;
+    while (idx < lower.length) {
+      const found = lower.indexOf(q, idx);
+      if (found === -1) break;
+      result.push(found);
+      idx = found + 1;
+    }
+    return result;
+  }, []);
+
+  const scrollTextareaToChar = useCallback((ta: HTMLTextAreaElement, charIdx: number) => {
+    // Estimate the line the character is on and scroll to it
+    const text = ta.value.substring(0, charIdx);
+    const lineNumber = (text.match(/\n/g) ?? []).length;
+    const lineHeight = parseFloat(ta.style.fontSize) * parseFloat(ta.style.lineHeight || '1.3');
+    ta.scrollTop = Math.max(0, lineNumber * lineHeight - ta.clientHeight / 2);
+  }, []);
+
+  const openFindBar = useCallback(() => {
+    findBarActiveRef.current = true;
+    setFindActive(true);
+    // Populate initial query from textarea selection if text is selected
+    const ta = textInputRef.current;
+    if (ta) {
+      const sel = ta.value.substring(ta.selectionStart, ta.selectionEnd).trim();
+      if (sel && !sel.includes('\n')) {
+        const matches = computeFindMatches(sel, ta.value);
+        setFindQuery(sel);
+        setFindMatches(matches);
+        const ci = matches.findIndex((m) => m >= ta.selectionStart);
+        setFindIdx(ci >= 0 ? ci : 0);
+        return;
+      }
+    }
+    setFindQuery('');
+    setFindMatches([]);
+    setFindIdx(0);
+  }, [computeFindMatches]);
+
+  const closeFindBar = useCallback(() => {
+    findBarActiveRef.current = false;
+    setFindActive(false);
+    setFindQuery('');
+    setFindMatches([]);
+    setFindIdx(0);
+    textInputRef.current?.focus();
+  }, []);
+
+  const handleFindQueryChange = useCallback((query: string) => {
+    setFindQuery(query);
+    const ta = textInputRef.current;
+    const matches = computeFindMatches(query, ta?.value ?? '');
+    setFindMatches(matches);
+    const newIdx = 0;
+    setFindIdx(newIdx);
+    if (ta && matches.length > 0) {
+      ta.setSelectionRange(matches[newIdx], matches[newIdx] + query.length);
+      scrollTextareaToChar(ta, matches[newIdx]);
+    }
+  }, [computeFindMatches, scrollTextareaToChar]);
+
+  const handleFindNext = useCallback(() => {
+    if (findMatches.length === 0) return;
+    const newIdx = (findIdx + 1) % findMatches.length;
+    setFindIdx(newIdx);
+    const ta = textInputRef.current;
+    if (ta) {
+      ta.setSelectionRange(findMatches[newIdx], findMatches[newIdx] + findQuery.length);
+      scrollTextareaToChar(ta, findMatches[newIdx]);
+    }
+  }, [findMatches, findIdx, findQuery]);
+
+  const handleFindPrev = useCallback(() => {
+    if (findMatches.length === 0) return;
+    const newIdx = (findIdx - 1 + findMatches.length) % findMatches.length;
+    setFindIdx(newIdx);
+    const ta = textInputRef.current;
+    if (ta) {
+      ta.setSelectionRange(findMatches[newIdx], findMatches[newIdx] + findQuery.length);
+      scrollTextareaToChar(ta, findMatches[newIdx]);
+    }
+  }, [findMatches, findIdx, findQuery]);
 
   // ─── Screen ↔ Canvas coordinate conversion ────────────────────
   const screenToCanvas = useCallback((clientX: number, clientY: number): Point => {
@@ -686,27 +783,44 @@ export function Canvas() {
       textarea.style.lineHeight = '1.3';
       editingElementIdRef.current = null;
       interactionRef.current = { type: 'none' };
+      // Reset find bar state
+      findBarActiveRef.current = false;
+      setFindActive(false);
+      setFindQuery('');
+      setFindMatches([]);
+      setFindIdx(0);
       // Cleanup listeners
       (textarea as any).__cleanupBlur?.();
       (textarea as any).__cleanupKeydown?.();
     };
 
-    textarea.addEventListener('blur', finishEdit);
+    const handleBlur = (e: FocusEvent) => {
+      // Don't close the editor if focus moved into the find bar
+      const related = e.relatedTarget as HTMLElement | null;
+      if (related?.closest?.('[data-find-bar]')) return;
+      finishEdit();
+    };
+    textarea.addEventListener('blur', handleBlur);
     (textarea as any).__cleanupBlur = () => {
-      textarea.removeEventListener('blur', finishEdit);
+      textarea.removeEventListener('blur', handleBlur);
     };
 
     const handleEditKeydown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
         textarea.blur();
         useToolStore.getState().clearSelection();
+      } else if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+        // Open in-element find bar
+        e.preventDefault();
+        e.stopPropagation();
+        openFindBar();
       }
     };
     textarea.addEventListener('keydown', handleEditKeydown);
     (textarea as any).__cleanupKeydown = () => {
       textarea.removeEventListener('keydown', handleEditKeydown);
     };
-  }, [saveSnapshot]);
+  }, [saveSnapshot, openFindBar]);
 
   // ─── Double-Click (edit existing text) ─────────────────────────
   const handleDoubleClick = useCallback(
@@ -848,6 +962,17 @@ export function Canvas() {
         onDoubleClick={handleDoubleClick}
         onContextMenu={(e) => e.preventDefault()}
       />
+      {findActive && (
+        <FindBar
+          query={findQuery}
+          currentIdx={findIdx}
+          totalMatches={findMatches.length}
+          onQueryChange={handleFindQueryChange}
+          onNext={handleFindNext}
+          onPrev={handleFindPrev}
+          onClose={closeFindBar}
+        />
+      )}
       <textarea
         ref={textInputRef}
         className="absolute hidden p-0 m-0 border-none outline-none bg-transparent resize-none"

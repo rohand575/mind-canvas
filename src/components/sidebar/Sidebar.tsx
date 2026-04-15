@@ -10,14 +10,6 @@ export function Sidebar() {
   const sidebarOpen = useCanvasStore((s) => s.sidebarOpen);
   const setSidebarOpen = useCanvasStore((s) => s.setSidebarOpen);
   const user = useAuthStore((s) => s.user);
-  const loadCanvasList = useDocumentStore((s) => s.loadCanvasList);
-
-  // Load canvas list when sidebar opens and user is signed in
-  useEffect(() => {
-    if (sidebarOpen && user) {
-      loadCanvasList();
-    }
-  }, [sidebarOpen, user, loadCanvasList]);
 
   // Close sidebar if user signs out
   useEffect(() => {

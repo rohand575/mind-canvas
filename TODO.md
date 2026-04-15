@@ -1,2 +1,0 @@
-I should be able to paste directly and not select the  Text tool and then paste
-If i paste any code it should know direclty and format in a nice way. suppose i paste json it should format nicely with different colors, just how code looks like, and the font for those things should also be code like

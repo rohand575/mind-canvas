@@ -6,6 +6,7 @@ import {
   setDoc,
   deleteDoc,
   updateDoc,
+  onSnapshot,
   query,
   where,
   orderBy,
@@ -49,7 +50,7 @@ export async function saveCanvasToFirestore(canvas: CanvasDocument): Promise<voi
     elements: canvas.elements,
     canvasState: canvas.canvasState,
     createdAt: canvas.createdAt,
-    updatedAt: Date.now(),
+    updatedAt: canvas.updatedAt,
   });
 }
 
@@ -61,4 +62,51 @@ export async function deleteCanvasFromFirestore(canvasId: string): Promise<void>
 export async function renameCanvasInFirestore(canvasId: string, name: string): Promise<void> {
   const docRef = doc(db, FIRESTORE_CANVASES_COLLECTION, canvasId);
   await updateDoc(docRef, { name, updatedAt: Date.now() });
+}
+
+/**
+ * Real-time subscription to the user's canvas list.
+ * Calls callback whenever any canvas is created, renamed, or deleted.
+ * Returns an unsubscribe function.
+ */
+export function subscribeToUserCanvases(
+  uid: string,
+  callback: (list: CanvasDocumentMeta[]) => void,
+): () => void {
+  const q = query(
+    canvasesRef,
+    where('ownerId', '==', uid),
+    orderBy('updatedAt', 'desc'),
+  );
+  return onSnapshot(q, (snapshot) => {
+    const list = snapshot.docs.map((d) => {
+      const data = d.data();
+      return {
+        id: d.id,
+        name: data.name,
+        updatedAt: data.updatedAt,
+        createdAt: data.createdAt,
+      } as CanvasDocumentMeta;
+    });
+    callback(list);
+  });
+}
+
+/**
+ * Real-time subscription to a single canvas document.
+ * Calls callback whenever the canvas content changes (e.g. saved from another device).
+ * Returns an unsubscribe function.
+ */
+export function subscribeToCanvas(
+  canvasId: string,
+  callback: (canvas: CanvasDocument | null) => void,
+): () => void {
+  const docRef = doc(db, FIRESTORE_CANVASES_COLLECTION, canvasId);
+  return onSnapshot(docRef, (snapshot) => {
+    if (!snapshot.exists()) {
+      callback(null);
+      return;
+    }
+    callback({ id: snapshot.id, ...snapshot.data() } as CanvasDocument);
+  });
 }

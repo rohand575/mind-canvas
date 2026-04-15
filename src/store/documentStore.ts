@@ -4,20 +4,28 @@ import { useElementStore } from './elementStore';
 import { useCanvasStore } from './canvasStore';
 import { useAuthStore } from './authStore';
 import {
-  fetchUserCanvases,
   fetchCanvas,
   saveCanvasToFirestore,
   deleteCanvasFromFirestore,
   renameCanvasInFirestore,
+  subscribeToUserCanvases,
+  subscribeToCanvas,
 } from '../services/firestore';
+
+// Subscription handles live outside Zustand state to avoid serialisation issues
+let listUnsub: (() => void) | null = null;
+let canvasUnsub: (() => void) | null = null;
 
 interface DocumentStore {
   currentCanvasId: string | null;
   canvasList: CanvasDocumentMeta[];
   isSaving: boolean;
   isLoading: boolean;
+  /** Timestamp of the last save we performed locally — used to ignore our own echoed snapshots */
+  localUpdatedAt: number;
 
-  loadCanvasList: () => Promise<void>;
+  subscribeCanvasList: (uid: string) => void;
+  unsubscribeAll: () => void;
   createCanvas: (name: string) => Promise<string>;
   openCanvas: (id: string) => Promise<void>;
   renameCanvas: (id: string, name: string) => Promise<void>;
@@ -31,12 +39,25 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
   canvasList: [],
   isSaving: false,
   isLoading: false,
+  localUpdatedAt: 0,
 
-  loadCanvasList: async () => {
-    const user = useAuthStore.getState().user;
-    if (!user) return;
-    const list = await fetchUserCanvases(user.uid);
-    set({ canvasList: list });
+  /**
+   * Start a real-time subscription to the signed-in user's canvas list.
+   * Replaces any existing list subscription.
+   */
+  subscribeCanvasList: (uid) => {
+    if (listUnsub) { listUnsub(); listUnsub = null; }
+    listUnsub = subscribeToUserCanvases(uid, (list) => {
+      set({ canvasList: list });
+    });
+  },
+
+  /**
+   * Tear down all active Firestore subscriptions (call on sign-out).
+   */
+  unsubscribeAll: () => {
+    if (listUnsub) { listUnsub(); listUnsub = null; }
+    if (canvasUnsub) { canvasUnsub(); canvasUnsub = null; }
   },
 
   createCanvas: async (name) => {
@@ -46,7 +67,6 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
     const id = crypto.randomUUID();
     const now = Date.now();
 
-    // Save empty canvas to Firestore
     await saveCanvasToFirestore({
       id,
       name,
@@ -57,20 +77,32 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
       updatedAt: now,
     });
 
-    // Update local state
-    set((s) => ({
-      currentCanvasId: id,
-      canvasList: [{ id, name, createdAt: now, updatedAt: now }, ...s.canvasList],
-    }));
-
-    // Clear the canvas
+    // The list subscription will pick up the new canvas automatically;
+    // we still set currentCanvasId and clear the canvas immediately.
+    set({ currentCanvasId: id, localUpdatedAt: now });
     useElementStore.getState().setElements([]);
     useCanvasStore.getState().loadState({ offsetX: 0, offsetY: 0, zoom: 1 });
+
+    // Subscribe to real-time updates for the new canvas
+    if (canvasUnsub) { canvasUnsub(); canvasUnsub = null; }
+    canvasUnsub = subscribeToCanvas(id, (remote) => {
+      if (!remote) return;
+      const { localUpdatedAt, currentCanvasId } = get();
+      // Only apply updates that are newer than our last local save
+      if (remote.id === currentCanvasId && remote.updatedAt > localUpdatedAt) {
+        useElementStore.getState().setElements(remote.elements);
+        useCanvasStore.getState().loadState(remote.canvasState);
+        set({ localUpdatedAt: remote.updatedAt });
+      }
+    });
 
     return id;
   },
 
   openCanvas: async (id) => {
+    // Tear down existing canvas subscription before switching
+    if (canvasUnsub) { canvasUnsub(); canvasUnsub = null; }
+
     set({ isLoading: true });
     try {
       const canvas = await fetchCanvas(id);
@@ -89,14 +121,27 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
         }
       }
 
-      set({ currentCanvasId: id });
+      set({ currentCanvasId: id, localUpdatedAt: canvas.updatedAt });
     } finally {
       set({ isLoading: false });
     }
+
+    // Start real-time subscription for this canvas
+    canvasUnsub = subscribeToCanvas(id, (remote) => {
+      if (!remote) return;
+      const { localUpdatedAt, currentCanvasId } = get();
+      // Only apply changes that come from another device (newer than our last save)
+      if (remote.id === currentCanvasId && remote.updatedAt > localUpdatedAt) {
+        useElementStore.getState().setElements(remote.elements);
+        useCanvasStore.getState().loadState(remote.canvasState);
+        set({ localUpdatedAt: remote.updatedAt });
+      }
+    });
   },
 
   renameCanvas: async (id, name) => {
     await renameCanvasInFirestore(id, name);
+    // List subscription will reflect the rename; update locally too for instant feedback
     set((s) => ({
       canvasList: s.canvasList.map((c) =>
         c.id === id ? { ...c, name, updatedAt: Date.now() } : c
@@ -110,12 +155,12 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
     const newList = canvasList.filter((c) => c.id !== id);
     set({ canvasList: newList });
 
-    // If we deleted the active canvas, switch to the first remaining or clear
     if (currentCanvasId === id) {
+      if (canvasUnsub) { canvasUnsub(); canvasUnsub = null; }
       if (newList.length > 0) {
         await get().openCanvas(newList[0].id);
       } else {
-        set({ currentCanvasId: null });
+        set({ currentCanvasId: null, localUpdatedAt: 0 });
         useElementStore.getState().setElements([]);
         useCanvasStore.getState().loadState({ offsetX: 0, offsetY: 0, zoom: 1 });
       }
@@ -132,6 +177,7 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
       const { elements } = useElementStore.getState();
       const { offsetX, offsetY, zoom, theme, showGrid } = useCanvasStore.getState();
       const existing = get().canvasList.find((c) => c.id === currentCanvasId);
+      const now = Date.now();
 
       await saveCanvasToFirestore({
         id: currentCanvasId,
@@ -139,14 +185,15 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
         ownerId: user.uid,
         elements,
         canvasState: { offsetX, offsetY, zoom, theme, showGrid },
-        createdAt: existing?.createdAt ?? Date.now(),
-        updatedAt: Date.now(),
+        createdAt: existing?.createdAt ?? now,
+        updatedAt: now,
       });
 
-      // Update the updatedAt in the list
+      // Record the save timestamp so the echoed snapshot is ignored
       set((s) => ({
+        localUpdatedAt: now,
         canvasList: s.canvasList.map((c) =>
-          c.id === currentCanvasId ? { ...c, updatedAt: Date.now() } : c
+          c.id === currentCanvasId ? { ...c, updatedAt: now } : c
         ),
       }));
     } finally {
@@ -155,6 +202,7 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
   },
 
   reset: () => {
-    set({ currentCanvasId: null, canvasList: [], isSaving: false, isLoading: false });
+    get().unsubscribeAll();
+    set({ currentCanvasId: null, canvasList: [], isSaving: false, isLoading: false, localUpdatedAt: 0 });
   },
 }));
