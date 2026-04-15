@@ -3,6 +3,7 @@ import { Toolbar } from './components/toolbar/Toolbar';
 import { ShortcutsDialog } from './components/ui/ShortcutsDialog';
 import { Sidebar } from './components/sidebar/Sidebar';
 import { LoginButton } from './components/auth/LoginButton';
+import { MiniMap } from './components/canvas/MiniMap';
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts';
 import { usePersistence } from './hooks/usePersistence';
 import { useCanvasStore } from './store/canvasStore';
@@ -47,6 +48,7 @@ export default function App() {
         <Sidebar />
         <Toolbar />
         <Canvas />
+        <MiniMap />
         <ShortcutsDialog open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
       </div>
     </div>

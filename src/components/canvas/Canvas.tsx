@@ -228,6 +228,14 @@ export function Canvas() {
         return;
       }
 
+      // Ctrl+left-click: pan (same as right-click drag)
+      if (e.ctrlKey) {
+        e.preventDefault();
+        startRightClickPan(e.clientX, e.clientY);
+        if (canvasRef.current) canvasRef.current.style.cursor = 'grabbing';
+        return;
+      }
+
       // Pan takes priority (space+drag)
       if (startPan(e.clientX, e.clientY)) return;
 
