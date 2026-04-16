@@ -2,20 +2,15 @@ import { create } from 'zustand';
 import type { CanvasDocumentMeta } from '../types';
 import { useElementStore } from './elementStore';
 import { useCanvasStore } from './canvasStore';
-import { useAuthStore } from './authStore';
 import {
-  fetchCanvas,
-  saveCanvasToFirestore,
-  deleteCanvasFromFirestore,
-  renameCanvasInFirestore,
-  subscribeToUserCanvases,
-} from '../services/firestore';
+  saveCanvasLocally,
+  loadCanvasLocally,
+  loadAllCanvasMeta,
+  deleteCanvasLocally,
+} from '../utils/persistence';
 
 // Only one save may run at a time. New saves are chained after the current one.
 let saveQueue: Promise<void> = Promise.resolve();
-
-// List subscription handle (sidebar real-time updates)
-let listUnsub: (() => void) | null = null;
 
 interface DocumentStore {
   currentCanvasId: string | null;
@@ -23,14 +18,12 @@ interface DocumentStore {
   isSaving: boolean;
   isLoading: boolean;
 
-  subscribeCanvasList: (uid: string) => void;
-  unsubscribeAll: () => void;
+  init: () => Promise<void>;
   createCanvas: (name: string) => Promise<string>;
   openCanvas: (id: string) => Promise<void>;
   renameCanvas: (id: string, name: string) => Promise<void>;
   deleteCanvas: (id: string) => Promise<void>;
   saveCurrentCanvas: () => Promise<void>;
-  reset: () => void;
 }
 
 export const useDocumentStore = create<DocumentStore>((set, get) => ({
@@ -39,42 +32,44 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
   isSaving: false,
   isLoading: false,
 
-  subscribeCanvasList: (uid) => {
-    if (listUnsub) { listUnsub(); listUnsub = null; }
-    listUnsub = subscribeToUserCanvases(uid, (list) => {
-      set({ canvasList: list });
-    });
-  },
-
-  unsubscribeAll: () => {
-    if (listUnsub) { listUnsub(); listUnsub = null; }
+  init: async () => {
+    set({ isLoading: true });
+    try {
+      const list = await loadAllCanvasMeta();
+      if (list.length > 0) {
+        set({ canvasList: list });
+        await get().openCanvas(list[0].id);
+      } else {
+        await get().createCanvas('Untitled 1');
+      }
+    } catch (err) {
+      console.error('[documentStore] init failed:', err);
+    } finally {
+      set({ isLoading: false });
+    }
   },
 
   /**
    * Queue a save of the CURRENT canvas state.
-   * State (canvasId, elements, viewport) is captured immediately so switching
-   * canvases after calling this does not corrupt the saved data.
-   * Saves are serialised — no two writes run at the same time.
+   * State is captured immediately so switching canvases after calling this
+   * does not corrupt the saved data. Saves are serialised — no two writes
+   * run at the same time.
    */
   saveCurrentCanvas: async () => {
     const canvasId = get().currentCanvasId;
-    const user = useAuthStore.getState().user;
-    if (!user || !canvasId) return;
+    if (!canvasId) return;
 
-    // Snapshot everything synchronously right now, before any async work
     const elements = useElementStore.getState().elements;
     const { offsetX, offsetY, zoom, theme, showGrid } = useCanvasStore.getState();
     const existing = get().canvasList.find((c) => c.id === canvasId);
     const now = Date.now();
 
-    // Chain this save after whatever is already in the queue
     const thisSave = saveQueue.then(async () => {
       set({ isSaving: true });
       try {
-        await saveCanvasToFirestore({
+        await saveCanvasLocally({
           id: canvasId,
           name: existing?.name ?? 'Untitled',
-          ownerId: user.uid,
           elements,
           canvasState: { offsetX, offsetY, zoom, theme, showGrid },
           createdAt: existing?.createdAt ?? now,
@@ -92,15 +87,11 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
       }
     });
 
-    saveQueue = thisSave; // advance the queue tail
-    await thisSave;       // wait for just this save (not future ones)
+    saveQueue = thisSave;
+    await thisSave;
   },
 
   createCanvas: async (name) => {
-    const user = useAuthStore.getState().user;
-    if (!user) throw new Error('Must be signed in to create a canvas');
-
-    // Save current canvas before leaving (captures state right now)
     if (get().currentCanvasId) {
       await get().saveCurrentCanvas();
     }
@@ -108,17 +99,15 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
     const id = crypto.randomUUID();
     const now = Date.now();
 
-    await saveCanvasToFirestore({
+    await saveCanvasLocally({
       id,
       name,
-      ownerId: user.uid,
       elements: [],
       canvasState: { offsetX: 0, offsetY: 0, zoom: 1 },
       createdAt: now,
       updatedAt: now,
     });
 
-    // Optimistic local update — list subscription will confirm shortly
     set((s) => ({
       currentCanvasId: id,
       canvasList: [{ id, name, createdAt: now, updatedAt: now }, ...s.canvasList],
@@ -133,14 +122,13 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
   openCanvas: async (id) => {
     const prevId = get().currentCanvasId;
 
-    // Save current canvas before switching (captures state right now)
     if (prevId && prevId !== id) {
       await get().saveCurrentCanvas();
     }
 
     set({ isLoading: true });
     try {
-      const canvas = await fetchCanvas(id);
+      const canvas = await loadCanvasLocally(id);
       if (!canvas) {
         console.error('[documentStore] canvas not found:', id);
         return;
@@ -168,7 +156,10 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
   },
 
   renameCanvas: async (id, name) => {
-    await renameCanvasInFirestore(id, name);
+    const canvas = await loadCanvasLocally(id);
+    if (canvas) {
+      await saveCanvasLocally({ ...canvas, name, updatedAt: Date.now() });
+    }
     set((s) => ({
       canvasList: s.canvasList.map((c) =>
         c.id === id ? { ...c, name, updatedAt: Date.now() } : c
@@ -177,7 +168,7 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
   },
 
   deleteCanvas: async (id) => {
-    await deleteCanvasFromFirestore(id);
+    await deleteCanvasLocally(id);
     const { currentCanvasId, canvasList } = get();
     const newList = canvasList.filter((c) => c.id !== id);
     set({ canvasList: newList });
@@ -186,16 +177,8 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
       if (newList.length > 0) {
         await get().openCanvas(newList[0].id);
       } else {
-        set({ currentCanvasId: null });
-        useElementStore.getState().setElements([]);
-        useCanvasStore.getState().loadState({ offsetX: 0, offsetY: 0, zoom: 1 });
+        await get().createCanvas('Untitled 1');
       }
     }
-  },
-
-  reset: () => {
-    get().unsubscribeAll();
-    saveQueue = Promise.resolve();
-    set({ currentCanvasId: null, canvasList: [], isSaving: false, isLoading: false });
   },
 }));

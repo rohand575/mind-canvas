@@ -88,7 +88,6 @@ export interface CanvasDocumentMeta {
 }
 
 export interface CanvasDocument extends CanvasDocumentMeta {
-  ownerId: string;
   elements: CanvasElement[];
   canvasState: CanvasState & {
     theme?: Theme;

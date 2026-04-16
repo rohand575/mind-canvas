@@ -1,13 +1,6 @@
 import { openDB, type IDBPDatabase } from 'idb';
-import type { CanvasElement, CanvasState } from '../types';
-import { DB_NAME, DB_VERSION, STORE_NAME, DEFAULT_CANVAS_ID } from '../constants';
-
-interface SavedCanvas {
-  id: string;
-  elements: CanvasElement[];
-  canvasState: CanvasState;
-  updatedAt: number;
-}
+import type { CanvasDocument, CanvasDocumentMeta } from '../types';
+import { DB_NAME, DB_VERSION, STORE_NAME } from '../constants';
 
 let dbPromise: Promise<IDBPDatabase> | null = null;
 
@@ -24,31 +17,25 @@ function getDB(): Promise<IDBPDatabase> {
   return dbPromise;
 }
 
-export async function saveCanvas(
-  elements: CanvasElement[],
-  canvasState: CanvasState,
-): Promise<void> {
+export async function saveCanvasLocally(canvas: CanvasDocument): Promise<void> {
   const db = await getDB();
-  const data: SavedCanvas = {
-    id: DEFAULT_CANVAS_ID,
-    elements,
-    canvasState,
-    updatedAt: Date.now(),
-  };
-  await db.put(STORE_NAME, data);
+  await db.put(STORE_NAME, canvas);
 }
 
-export async function loadCanvas(): Promise<{
-  elements: CanvasElement[];
-  canvasState: CanvasState;
-} | null> {
+export async function loadCanvasLocally(id: string): Promise<CanvasDocument | null> {
   const db = await getDB();
-  const data = await db.get(STORE_NAME, DEFAULT_CANVAS_ID) as SavedCanvas | undefined;
-  if (!data) return null;
-  return { elements: data.elements, canvasState: data.canvasState };
+  return (await db.get(STORE_NAME, id)) ?? null;
 }
 
-export async function clearCanvas(): Promise<void> {
+export async function loadAllCanvasMeta(): Promise<CanvasDocumentMeta[]> {
   const db = await getDB();
-  await db.delete(STORE_NAME, DEFAULT_CANVAS_ID);
+  const all = (await db.getAll(STORE_NAME)) as CanvasDocument[];
+  return all
+    .map(({ id, name, createdAt, updatedAt }) => ({ id, name, createdAt, updatedAt }))
+    .sort((a, b) => b.updatedAt - a.updatedAt);
+}
+
+export async function deleteCanvasLocally(id: string): Promise<void> {
+  const db = await getDB();
+  await db.delete(STORE_NAME, id);
 }
