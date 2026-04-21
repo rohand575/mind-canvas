@@ -37,10 +37,21 @@ function getRoughFillStyle(fillStyle: string | undefined): RoughOptions['fillSty
 /**
  * Renders a single element to the canvas using rough.js for hand-drawn feel.
  */
+interface TextHighlightRange {
+  start: number;
+  length: number;
+  active?: boolean;
+}
+
+interface RenderElementOptions {
+  textHighlights?: TextHighlightRange[];
+}
+
 export function renderElement(
   rc: RoughCanvas,
   ctx: CanvasRenderingContext2D,
   element: CanvasElement,
+  renderOptions?: RenderElementOptions,
 ) {
   ctx.save();
   ctx.globalAlpha = element.opacity;
@@ -172,13 +183,45 @@ export function renderElement(
 
     case 'text':
       if (element.isCode) {
-        renderCodeBlock(ctx, element);
+        renderCodeBlock(ctx, element, renderOptions?.textHighlights);
       } else {
         ctx.font = `${element.fontSize ?? 40}px 'Virgil', 'Segoe Print', 'Comic Sans MS', cursive`;
-        ctx.fillStyle = element.strokeColor;
         ctx.textBaseline = 'top';
         const lines = (element.text ?? '').split('\n');
         const lineHeight = (element.fontSize ?? 40) * 1.3;
+
+        if (renderOptions?.textHighlights?.length) {
+          ctx.fillStyle = 'rgba(252,232,170,0.85)';
+          const lineStarts = lines.reduce<number[]>((acc, _line, i) => {
+            acc.push(i === 0 ? 0 : acc[i - 1] + lines[i - 1].length + 1);
+            return acc;
+          }, []);
+
+          for (const highlight of renderOptions.textHighlights) {
+            let remaining = highlight.length;
+            let pos = highlight.start;
+            for (let lineIndex = 0; lineIndex < lines.length && remaining > 0; lineIndex++) {
+              const lineStart = lineStarts[lineIndex];
+              const lineText = lines[lineIndex];
+              const lineEnd = lineStart + lineText.length;
+              if (pos > lineEnd) continue;
+              const segmentStart = Math.max(pos, lineStart);
+              const segmentEnd = Math.min(lineEnd, pos + remaining);
+              if (segmentEnd > segmentStart) {
+                const xOffset = ctx.measureText(lineText.slice(0, segmentStart - lineStart)).width;
+                const highlightText = lineText.slice(segmentStart - lineStart, segmentEnd - lineStart);
+                const width = ctx.measureText(highlightText).width;
+                const y = element.y + lineIndex * lineHeight;
+                const x = element.x + xOffset;
+                ctx.fillRect(x - 2, y, width + 4, lineHeight);
+              }
+              remaining -= segmentEnd - segmentStart;
+              pos = lineEnd + 1;
+            }
+          }
+        }
+
+        ctx.fillStyle = element.strokeColor;
         lines.forEach((line, i) => {
           ctx.fillText(line, element.x, element.y + i * lineHeight);
         });
@@ -192,7 +235,7 @@ export function renderElement(
 /**
  * Renders a code block with syntax highlighting, rounded background, and monospace font.
  */
-function renderCodeBlock(ctx: CanvasRenderingContext2D, element: CanvasElement) {
+function renderCodeBlock(ctx: CanvasRenderingContext2D, element: CanvasElement, highlightRanges?: TextHighlightRange[]) {
   const fontSize = element.fontSize ?? 14;
   const lineHeight = fontSize * CODE_LINE_HEIGHT;
   const lines = (element.text ?? '').split('\n');
@@ -243,6 +286,36 @@ function renderCodeBlock(ctx: CanvasRenderingContext2D, element: CanvasElement) 
 
   const textX = x + CODE_PADDING;
   const textStartY = y + CODE_PADDING;
+
+  if (highlightRanges?.length) {
+    ctx.fillStyle = 'rgba(252,232,170,0.85)';
+    const lineStarts = lines.reduce<number[]>((acc, _line, i) => {
+      acc.push(i === 0 ? 0 : acc[i - 1] + lines[i - 1].length + 1);
+      return acc;
+    }, []);
+
+    for (const highlight of highlightRanges) {
+      let remaining = highlight.length;
+      let pos = highlight.start;
+      for (let lineIndex = 0; lineIndex < lines.length && remaining > 0; lineIndex++) {
+        const lineStart = lineStarts[lineIndex];
+        const lineText = lines[lineIndex];
+        const lineEnd = lineStart + lineText.length;
+        if (pos > lineEnd) continue;
+        const segmentStart = Math.max(pos, lineStart);
+        const segmentEnd = Math.min(lineEnd, pos + remaining);
+        if (segmentEnd > segmentStart) {
+          const xOffset = ctx.measureText(lineText.slice(0, segmentStart - lineStart)).width;
+          const highlightText = lineText.slice(segmentStart - lineStart, segmentEnd - lineStart);
+          const width = ctx.measureText(highlightText).width;
+          const yOffset = textStartY + lineIndex * lineHeight;
+          ctx.fillRect(textX + xOffset - 2, yOffset, width + 4, lineHeight);
+        }
+        remaining -= segmentEnd - segmentStart;
+        pos = lineEnd + 1;
+      }
+    }
+  }
 
   lines.forEach((line, lineIdx) => {
     const tokens = tokenizeLine(line, language);

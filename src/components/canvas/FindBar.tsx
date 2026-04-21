@@ -56,7 +56,7 @@ export function FindBar({ query, currentIdx, totalMatches, onQueryChange, onNext
         value={query}
         onChange={(e) => onQueryChange(e.target.value)}
         onKeyDown={handleKeyDown}
-        placeholder="Find in text…"
+        placeholder="Find in text or code…"
         className="flex-1 bg-transparent outline-none text-sm text-gray-800 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 min-w-0"
         spellCheck={false}
         autoComplete="off"

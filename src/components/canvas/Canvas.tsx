@@ -13,6 +13,7 @@ import { createElement } from '../../utils/createElement';
 import { GRID_SIZE } from '../../constants';
 import { ContextMenu } from './ContextMenu';
 import { FindBar } from './FindBar';
+import { tokenizeLine, getTokenColor, CODE_THEME_DARK, CODE_FONT } from '../../utils/codeDetection';
 import type { CanvasElement, Point, ResizeHandle, Bounds } from '../../types';
 
 function snapToGridValue(val: number, gridSize: number): number {
@@ -43,12 +44,17 @@ export function Canvas() {
   const editingElementIdRef = useRef<string | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
 
-  // ─── In-element find (Ctrl+F while editing) ───────────────────
+  // ─── Find state / mode ───────────────────────────────────────
   const findBarActiveRef = useRef(false); // mirrors findActive, readable in closures
   const [findActive, setFindActive] = useState(false);
   const [findQuery, setFindQuery] = useState('');
+  const [findMode, setFindMode] = useState<'text' | 'canvas'>('text');
   const [findMatches, setFindMatches] = useState<number[]>([]);
+  const [canvasFindResults, setCanvasFindResults] = useState<{ elementId: string; charIndex: number }[]>([]);
   const [findIdx, setFindIdx] = useState(0);
+  const [isCodeEdit, setIsCodeEdit] = useState(false);
+  const [codeLanguage, setCodeLanguage] = useState('code');
+  const [editorOverlayHtml, setEditorOverlayHtml] = useState('');
 
   const { handleWheel, handleKeyDown, handleKeyUp, startPan, startRightClickPan, movePan, endPan, isSpacePressed } =
     useCanvasInteraction();
@@ -70,6 +76,163 @@ export function Canvas() {
     return result;
   }, []);
 
+  const computeCanvasFindResults = useCallback((query: string) => {
+    if (!query) return [];
+    const lowerQuery = query.toLowerCase();
+    const { elements } = useElementStore.getState();
+    const results: { elementId: string; charIndex: number }[] = [];
+    for (const element of elements) {
+      if (!element.text) continue;
+      const text = element.text.toLowerCase();
+      let idx = 0;
+      while (idx < text.length) {
+        const found = text.indexOf(lowerQuery, idx);
+        if (found === -1) break;
+        results.push({ elementId: element.id, charIndex: found });
+        idx = found + 1;
+      }
+    }
+    return results;
+  }, []);
+
+  const centerCanvasElement = useCallback((elementId: string) => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const element = useElementStore.getState().elements.find((el) => el.id === elementId);
+    if (!element) return;
+
+    const bounds = getElementBounds(element);
+    const { zoom } = useCanvasStore.getState();
+    const viewWidth = canvas.clientWidth;
+    const viewHeight = canvas.clientHeight;
+    const offsetX = viewWidth / 2 - (bounds.x + bounds.width / 2) * zoom;
+    const offsetY = viewHeight / 2 - (bounds.y + bounds.height / 2) * zoom;
+    useCanvasStore.getState().setOffset(offsetX, offsetY);
+  }, []);
+
+  const openCanvasFindBar = useCallback(() => {
+    findBarActiveRef.current = true;
+    setFindActive(true);
+    setFindMode('canvas');
+    setFindQuery('');
+    setFindMatches([]);
+    setCanvasFindResults([]);
+    setFindIdx(0);
+  }, []);
+
+  const handleGlobalFindKeyDown = useCallback((e: KeyboardEvent) => {
+    const target = e.target as HTMLElement;
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') {
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+        return;
+      }
+      e.preventDefault();
+      openCanvasFindBar();
+    }
+  }, [openCanvasFindBar]);
+
+  const escapeHtml = useCallback((value: string) => {
+    return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }, []);
+
+  const buildCodeHighlightHtml = useCallback((text: string, language: string, query = '') => {
+    const lowerQuery = query.toLowerCase();
+    return text
+      .split('\n')
+      .map((line) => {
+        const tokens = tokenizeLine(line, language);
+
+        const matchRanges: { start: number; end: number }[] = [];
+        if (query) {
+          const lowerLine = line.toLowerCase();
+          let idx = 0;
+          while (idx < lowerLine.length) {
+            const found = lowerLine.indexOf(lowerQuery, idx);
+            if (found === -1) break;
+            matchRanges.push({ start: found, end: found + query.length });
+            idx = found + query.length;
+          }
+        }
+
+        let tokenOffset = 0;
+        return tokens
+          .map((token) => {
+            const color = getTokenColor(token.type, CODE_THEME_DARK);
+            if (!query || matchRanges.length === 0) {
+              tokenOffset += token.text.length;
+              return `<span style="color: ${color}">${escapeHtml(token.text)}</span>`;
+            }
+
+            const parts: string[] = [];
+            let processed = 0;
+            for (const range of matchRanges) {
+              if (range.end <= tokenOffset || range.start >= tokenOffset + token.text.length) continue;
+              const startInToken = Math.max(0, range.start - tokenOffset);
+              const endInToken = Math.min(token.text.length, range.end - tokenOffset);
+              if (startInToken > processed) {
+                parts.push(escapeHtml(token.text.slice(processed, startInToken)));
+              }
+              const inner = escapeHtml(token.text.slice(startInToken, endInToken));
+              parts.push(`<span style="background: rgba(252,232,170,0.8); color: ${color}">${inner}</span>`);
+              processed = endInToken;
+            }
+            if (processed < token.text.length) {
+              parts.push(escapeHtml(token.text.slice(processed)));
+            }
+            tokenOffset += token.text.length;
+            if (parts.length === 0) {
+              return `<span style="color: ${color}">${escapeHtml(token.text)}</span>`;
+            }
+            return `<span style="color: ${color}">${parts.join('')}</span>`;
+          })
+          .join('');
+      })
+      .join('\n');
+  }, [escapeHtml]);
+
+  const buildPlainTextOverlayHtml = useCallback((text: string, query: string) => {
+    const lowerQuery = query.toLowerCase();
+    return text
+      .split('\n')
+      .map((line) => {
+        if (!query) return escapeHtml(line);
+        const lowerLine = line.toLowerCase();
+        let idx = 0;
+        const parts: string[] = [];
+        while (idx < line.length) {
+          const found = lowerLine.indexOf(lowerQuery, idx);
+          if (found === -1) {
+            parts.push(escapeHtml(line.slice(idx)));
+            break;
+          }
+          if (found > idx) {
+            parts.push(escapeHtml(line.slice(idx, found)));
+          }
+          parts.push(`<span style="background: rgba(252,232,170,0.8);">${escapeHtml(line.slice(found, found + query.length))}</span>`);
+          idx = found + query.length;
+        }
+        return parts.join('') || '&nbsp;';
+      })
+      .join('<br>');
+  }, [escapeHtml]);
+
+  const buildEditorOverlayHtml = useCallback((value: string, query: string, code: boolean, language: string) => {
+    if (code) {
+      return buildCodeHighlightHtml(value, language, query);
+    }
+    if (!query) return '';
+    return buildPlainTextOverlayHtml(value, query);
+  }, [buildCodeHighlightHtml, buildPlainTextOverlayHtml]);
+
+  const updateEditorOverlay = useCallback((query: string) => {
+    const ta = textInputRef.current;
+    if (!ta) {
+      setEditorOverlayHtml('');
+      return;
+    }
+    setEditorOverlayHtml(buildEditorOverlayHtml(ta.value, query, isCodeEdit, codeLanguage));
+  }, [buildEditorOverlayHtml, codeLanguage, isCodeEdit]);
+
   const scrollTextareaToChar = useCallback((ta: HTMLTextAreaElement, charIdx: number) => {
     // Estimate the line the character is on and scroll to it
     const text = ta.value.substring(0, charIdx);
@@ -81,6 +244,7 @@ export function Canvas() {
   const openFindBar = useCallback(() => {
     findBarActiveRef.current = true;
     setFindActive(true);
+    setFindMode('text');
     // Populate initial query from textarea selection if text is selected
     const ta = textInputRef.current;
     if (ta) {
@@ -96,6 +260,7 @@ export function Canvas() {
     }
     setFindQuery('');
     setFindMatches([]);
+    setCanvasFindResults([]);
     setFindIdx(0);
   }, [computeFindMatches]);
 
@@ -104,24 +269,47 @@ export function Canvas() {
     setFindActive(false);
     setFindQuery('');
     setFindMatches([]);
+    setCanvasFindResults([]);
     setFindIdx(0);
     textInputRef.current?.focus();
   }, []);
 
   const handleFindQueryChange = useCallback((query: string) => {
     setFindQuery(query);
+    updateEditorOverlay(query);
+    if (findMode === 'canvas') {
+      const results = computeCanvasFindResults(query);
+      setCanvasFindResults(results);
+      setFindIdx(0);
+      if (results.length > 0) {
+        const first = results[0];
+        useToolStore.getState().setSelectedIds([first.elementId]);
+        centerCanvasElement(first.elementId);
+      }
+      return;
+    }
+
     const ta = textInputRef.current;
     const matches = computeFindMatches(query, ta?.value ?? '');
     setFindMatches(matches);
-    const newIdx = 0;
-    setFindIdx(newIdx);
+    setFindIdx(0);
     if (ta && matches.length > 0) {
-      ta.setSelectionRange(matches[newIdx], matches[newIdx] + query.length);
-      scrollTextareaToChar(ta, matches[newIdx]);
+      ta.setSelectionRange(matches[0], matches[0] + query.length);
+      scrollTextareaToChar(ta, matches[0]);
     }
-  }, [computeFindMatches, scrollTextareaToChar]);
+  }, [computeFindMatches, computeCanvasFindResults, findMode, scrollTextareaToChar, centerCanvasElement, updateEditorOverlay]);
 
   const handleFindNext = useCallback(() => {
+    if (findMode === 'canvas') {
+      if (canvasFindResults.length === 0) return;
+      const newIdx = (findIdx + 1) % canvasFindResults.length;
+      setFindIdx(newIdx);
+      const result = canvasFindResults[newIdx];
+      useToolStore.getState().setSelectedIds([result.elementId]);
+      centerCanvasElement(result.elementId);
+      return;
+    }
+
     if (findMatches.length === 0) return;
     const newIdx = (findIdx + 1) % findMatches.length;
     setFindIdx(newIdx);
@@ -130,9 +318,19 @@ export function Canvas() {
       ta.setSelectionRange(findMatches[newIdx], findMatches[newIdx] + findQuery.length);
       scrollTextareaToChar(ta, findMatches[newIdx]);
     }
-  }, [findMatches, findIdx, findQuery]);
+  }, [canvasFindResults, findMatches, findIdx, findMode, findQuery, centerCanvasElement, scrollTextareaToChar]);
 
   const handleFindPrev = useCallback(() => {
+    if (findMode === 'canvas') {
+      if (canvasFindResults.length === 0) return;
+      const newIdx = (findIdx - 1 + canvasFindResults.length) % canvasFindResults.length;
+      setFindIdx(newIdx);
+      const result = canvasFindResults[newIdx];
+      useToolStore.getState().setSelectedIds([result.elementId]);
+      centerCanvasElement(result.elementId);
+      return;
+    }
+
     if (findMatches.length === 0) return;
     const newIdx = (findIdx - 1 + findMatches.length) % findMatches.length;
     setFindIdx(newIdx);
@@ -141,7 +339,7 @@ export function Canvas() {
       ta.setSelectionRange(findMatches[newIdx], findMatches[newIdx] + findQuery.length);
       scrollTextareaToChar(ta, findMatches[newIdx]);
     }
-  }, [findMatches, findIdx, findQuery]);
+  }, [canvasFindResults, findMatches, findIdx, findMode, findQuery, centerCanvasElement, scrollTextareaToChar]);
 
   // ─── Screen ↔ Canvas coordinate conversion ────────────────────
   const screenToCanvas = useCallback((clientX: number, clientY: number): Point => {
@@ -191,11 +389,24 @@ export function Canvas() {
     ctx.scale(zoom, zoom);
 
     // Render elements sorted by zIndex
+    const highlightMap = new Map<string, { start: number; length: number; active?: boolean }[]>();
+    if (findActive && findMode === 'canvas' && findQuery) {
+      for (let index = 0; index < canvasFindResults.length; index++) {
+        const result = canvasFindResults[index];
+        const ranges = highlightMap.get(result.elementId) ?? [];
+        ranges.push({
+          start: result.charIndex,
+          length: findQuery.length,
+          active: index === findIdx,
+        });
+        highlightMap.set(result.elementId, ranges);
+      }
+    }
     const rc = rough.canvas(canvas);
     const sorted = [...elements].sort((a, b) => a.zIndex - b.zIndex);
     for (const element of sorted) {
       if (element.id === editingElementIdRef.current) continue;
-      renderElement(rc, ctx, element);
+      renderElement(rc, ctx, element, { textHighlights: highlightMap.get(element.id) });
     }
 
     // Render selection UI
@@ -210,7 +421,7 @@ export function Canvas() {
     ctx.restore();
 
     rafRef.current = requestAnimationFrame(render);
-  }, []);
+  }, [findActive, findMode, findQuery, canvasFindResults, findIdx]);
 
   // ─── Setup / Teardown ─────────────────────────────────────────
   useEffect(() => {
@@ -232,6 +443,7 @@ export function Canvas() {
     canvas.addEventListener('wheel', handleWheel, { passive: false });
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
+    window.addEventListener('keydown', handleGlobalFindKeyDown);
 
     return () => {
       resizeObserver.disconnect();
@@ -239,8 +451,9 @@ export function Canvas() {
       canvas.removeEventListener('wheel', handleWheel);
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('keydown', handleGlobalFindKeyDown);
     };
-  }, [render, handleWheel, handleKeyDown, handleKeyUp]);
+  }, [render, handleWheel, handleKeyDown, handleKeyUp, handleGlobalFindKeyDown]);
   // ─── Save Current Text (synchronous) ───────────────────────────
   const saveCurrentText = useCallback(() => {
     const textarea = textInputRef.current;
@@ -678,64 +891,70 @@ export function Canvas() {
     textarea.style.fontSize = (editFontSize * zoom) + 'px';
     textarea.style.fontFamily = fontFamily;
     textarea.style.lineHeight = String(editLineHeight);
-    textarea.style.color = isCode ? '#cdd6f4' : element.strokeColor;
-    
-    // Set width and height to match the element being edited
-    const contentWidth = (element.width ?? 200) - (isCode ? 32 : 0); // Subtract padding for code
-    const contentHeight = (element.height ?? 100) - (isCode ? 32 : 0);
-    textarea.style.width = (contentWidth * zoom) + 'px';
-    textarea.style.height = (contentHeight * zoom) + 'px';
-    
-    if (isCode) {
-      textarea.style.background = '#1e1e2e';
-      textarea.style.borderRadius = '8px';
-      textarea.style.padding = '16px';
-      // For code blocks, include padding in total dimensions
-      textarea.style.width = ((element.width ?? 200) * zoom) + 'px';
-      textarea.style.height = ((element.height ?? 100) * zoom) + 'px';
-      textarea.style.boxSizing = 'border-box';
-    }
-    textarea.value = element.text ?? '';
-    textarea.focus();
-    
-    // Place cursor at click position instead of selecting all
-    if (clickPoint) {
-      const text = element.text ?? '';
-      const lineHeight = editFontSize * editLineHeight;
-      const relY = clickPoint.y - element.y - (isCode ? 16 : 0);
-      const lineIndex = Math.max(0, Math.floor(relY / lineHeight));
-      const lines = text.split('\n');
+      textarea.style.color = isCode ? 'transparent' : element.strokeColor;
+      textarea.style.caretColor = isCode ? '#cdd6f4' : element.strokeColor;
       
-      // Calculate character position in the clicked line
-      let charPos = 0;
-      for (let i = 0; i < Math.min(lineIndex, lines.length); i++) {
-        charPos += lines[i].length + 1; // +1 for newline
+      // Set width and height to match the element being edited
+      const contentWidth = (element.width ?? 200) - (isCode ? 32 : 0); // Subtract padding for code
+      const contentHeight = (element.height ?? 100) - (isCode ? 32 : 0);
+      textarea.style.width = (contentWidth * zoom) + 'px';
+      textarea.style.height = (contentHeight * zoom) + 'px';
+      
+      if (isCode) {
+        textarea.style.background = 'transparent';
+        textarea.style.borderRadius = '8px';
+        textarea.style.padding = '16px';
+        // For code blocks, include padding in total dimensions
+        textarea.style.width = ((element.width ?? 200) * zoom) + 'px';
+        textarea.style.height = ((element.height ?? 100) * zoom) + 'px';
+        textarea.style.boxSizing = 'border-box';
+        textarea.style.textShadow = 'none';
       }
-      
-      if (lineIndex < lines.length) {
-        const canvas = canvasRef.current;
-        if (canvas) {
-          const ctx = canvas.getContext('2d');
-          if (ctx) {
-            ctx.font = `${editFontSize}px ${fontFamily}`;
-            const relX = clickPoint.x - element.x - (isCode ? 16 : 0);
-            const line = lines[lineIndex];
-            // Find character position by measuring text width
-            for (let i = 0; i <= line.length; i++) {
-              const w = ctx.measureText(line.substring(0, i)).width;
-              if (w >= relX) {
-                charPos += Math.max(0, i - 1);
-                break;
+      textarea.value = element.text ?? '';
+      textarea.focus();
+      setIsCodeEdit(isCode);
+      setCodeLanguage(element.codeLanguage ?? 'code');
+      if (findActive && findQuery) {
+        updateEditorOverlay(findQuery);
+      }
+
+      if (clickPoint) {
+        const text = element.text ?? '';
+        const lineHeight = editFontSize * editLineHeight;
+        const relY = clickPoint.y - element.y - (isCode ? 16 : 0);
+        const lineIndex = Math.max(0, Math.floor(relY / lineHeight));
+        const lines = text.split('\n');
+
+        // Calculate character position in the clicked line
+        let charPos = 0;
+        for (let i = 0; i < Math.min(lineIndex, lines.length); i++) {
+          charPos += lines[i].length + 1; // +1 for newline
+        }
+
+        if (lineIndex < lines.length) {
+          const canvas = canvasRef.current;
+          if (canvas) {
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+              ctx.font = `${editFontSize}px ${fontFamily}`;
+              const relX = clickPoint.x - element.x - (isCode ? 16 : 0);
+              const line = lines[lineIndex];
+              // Find character position by measuring text width
+              for (let i = 0; i <= line.length; i++) {
+                const w = ctx.measureText(line.substring(0, i)).width;
+                if (w >= relX) {
+                  charPos += Math.max(0, i - 1);
+                  break;
+                }
+                if (i === line.length) charPos += line.length;
               }
-              if (i === line.length) charPos += line.length;
             }
           }
         }
+        textarea.setSelectionRange(charPos, charPos);
+      } else {
+        textarea.select();
       }
-      textarea.setSelectionRange(charPos, charPos);
-    } else {
-      textarea.select();
-    }
 
     // Cleanup previous listeners
     (textarea as any).__cleanupBlur?.();
@@ -779,10 +998,13 @@ export function Canvas() {
         textarea.style.padding = '';
         textarea.style.boxSizing = '';
         textarea.style.fontFamily = "'Virgil', 'Segoe Print', 'Comic Sans MS', cursive";
+        textarea.style.color = '';
+        textarea.style.caretColor = '';
       }
       textarea.style.lineHeight = '1.3';
       editingElementIdRef.current = null;
       interactionRef.current = { type: 'none' };
+      setIsCodeEdit(false);
       // Reset find bar state
       findBarActiveRef.current = false;
       setFindActive(false);
@@ -855,6 +1077,9 @@ export function Canvas() {
     textarea.style.color = useToolStore.getState().strokeColor;
     textarea.value = '';
     textarea.focus();
+    if (findActive && findQuery) {
+      updateEditorOverlay(findQuery);
+    }
 
     const finishText = () => {
       const position = textPositionRef.current;
@@ -966,12 +1191,46 @@ export function Canvas() {
         <FindBar
           query={findQuery}
           currentIdx={findIdx}
-          totalMatches={findMatches.length}
+          totalMatches={findMode === 'canvas' ? canvasFindResults.length : findMatches.length}
           onQueryChange={handleFindQueryChange}
           onNext={handleFindNext}
           onPrev={handleFindPrev}
           onClose={closeFindBar}
         />
+      )}
+      {(isCodeEdit || editorOverlayHtml) && (
+        <div
+          className="absolute pointer-events-none overflow-hidden rounded-lg"
+          style={{
+            left: textInputRef.current?.style.left,
+            top: textInputRef.current?.style.top,
+            width: textInputRef.current?.style.width,
+            height: textInputRef.current?.style.height,
+            fontFamily: isCodeEdit ? CODE_FONT : textInputRef.current?.style.fontFamily,
+            fontSize: textInputRef.current?.style.fontSize,
+            lineHeight: textInputRef.current?.style.lineHeight,
+            padding: textInputRef.current?.style.padding,
+            whiteSpace: 'pre-wrap',
+            background: isCodeEdit ? '#1e1e2e' : 'transparent',
+            color: isCodeEdit ? undefined : 'transparent',
+            overflow: 'hidden',
+          }}
+        >
+          <pre
+            className="m-0 p-0"
+            style={{
+              margin: 0,
+              fontFamily: isCodeEdit ? CODE_FONT : textInputRef.current?.style.fontFamily,
+              fontSize: textInputRef.current?.style.fontSize,
+              lineHeight: textInputRef.current?.style.lineHeight,
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-word',
+              minHeight: '100%',
+              color: isCodeEdit ? undefined : 'transparent',
+            }}
+            dangerouslySetInnerHTML={{ __html: editorOverlayHtml || (isCodeEdit ? '<br />' : '') }}
+          />
+        </div>
       )}
       <textarea
         ref={textInputRef}
@@ -985,9 +1244,9 @@ export function Canvas() {
         }}
         onInput={(e) => {
           const ta = e.currentTarget;
-          const isCodeEdit = ta.style.background === 'rgb(30, 30, 46)'; // #1e1e2e
+          const isCodeEditLocal = isCodeEdit;
           const fontFamily = ta.style.fontFamily;
-          const padding = isCodeEdit ? 32 : 0; // 16px padding on each side for code
+          const padding = isCodeEditLocal ? 32 : 0; // 16px padding on each side for code
           
           // Auto-grow height
           ta.style.height = 'auto';
@@ -1012,6 +1271,10 @@ export function Canvas() {
                 ta.style.left = (parseFloat(ta.style.left) - panAmount) + 'px';
               }
             }
+          }
+
+          if (findActive && findQuery) {
+            updateEditorOverlay(findQuery);
           }
         }}
       />
