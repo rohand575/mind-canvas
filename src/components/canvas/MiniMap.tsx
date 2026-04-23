@@ -288,7 +288,7 @@ export function MiniMap() {
 
   return (
     <div
-      className="absolute bottom-5 left-5 z-40 select-none"
+      className="absolute bottom-6 left-6 z-40 select-none"
       style={{ width: collapsed ? 'auto' : MM_W }}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}

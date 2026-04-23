@@ -125,7 +125,7 @@ function Label({ children }: { children: React.ReactNode }) {
 // ─── Divider ────────────────────────────────────────────────────────
 
 function Divider() {
-  return <div className="w-px h-7 bg-gray-950/[0.06] dark:bg-white/[0.06] mx-1.5 flex-shrink-0" />;
+  return <div className="w-px h-7 bg-gray-950/[0.06] dark:bg-white/[0.06] mx-2 flex-shrink-0" />;
 }
 
 // ─── Trigger Button ─────────────────────────────────────────────────
@@ -181,7 +181,7 @@ export function StylePanel() {
   const STROKE_WIDTH_OPTS = [1, 2, 4] as const;
 
   return (
-    <div className="flex items-center gap-1.5 px-4">
+    <div className="flex items-center gap-2 px-5">
       {/* ── Colors ── */}
       <div className="flex items-center gap-0.5">
         {/* Stroke Color */}

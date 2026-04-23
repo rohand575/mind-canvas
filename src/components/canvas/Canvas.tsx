@@ -885,36 +885,34 @@ export function Canvas() {
     const editFontSize = element.fontSize ?? (isCode ? 14 : 40);
     const editLineHeight = isCode ? 1.5 : 1.3;
 
+    const codePad = Math.round(16 * zoom);
     textarea.style.display = 'block';
-    textarea.style.left = ((element.x + (isCode ? 16 : 0)) * zoom + offsetX) + 'px';
-    textarea.style.top = ((element.y + (isCode ? 16 : 0)) * zoom + offsetY) + 'px';
+    textarea.style.left = (element.x * zoom + offsetX) + 'px';
+    textarea.style.top = (element.y * zoom + offsetY) + 'px';
     textarea.style.fontSize = (editFontSize * zoom) + 'px';
     textarea.style.fontFamily = fontFamily;
     textarea.style.lineHeight = String(editLineHeight);
-      textarea.style.color = isCode ? 'transparent' : element.strokeColor;
-      textarea.style.caretColor = isCode ? '#cdd6f4' : element.strokeColor;
-      
-      // Set width and height to match the element being edited
-      const contentWidth = (element.width ?? 200) - (isCode ? 32 : 0); // Subtract padding for code
-      const contentHeight = (element.height ?? 100) - (isCode ? 32 : 0);
-      textarea.style.width = (contentWidth * zoom) + 'px';
-      textarea.style.height = (contentHeight * zoom) + 'px';
-      
-      if (isCode) {
-        textarea.style.background = 'transparent';
-        textarea.style.borderRadius = '8px';
-        textarea.style.padding = '16px';
-        // For code blocks, include padding in total dimensions
-        textarea.style.width = ((element.width ?? 200) * zoom) + 'px';
-        textarea.style.height = ((element.height ?? 100) * zoom) + 'px';
-        textarea.style.boxSizing = 'border-box';
-        textarea.style.textShadow = 'none';
-      }
+    textarea.style.color = isCode ? 'transparent' : element.strokeColor;
+    textarea.style.caretColor = isCode ? '#cdd6f4' : element.strokeColor;
+    textarea.style.width = ((element.width ?? 200) * zoom) + 'px';
+    textarea.style.height = ((element.height ?? 100) * zoom) + 'px';
+
+    if (isCode) {
+      textarea.style.background = 'transparent';
+      textarea.style.borderRadius = '8px';
+      textarea.style.padding = codePad + 'px';
+      textarea.style.boxSizing = 'border-box';
+      textarea.style.textShadow = 'none';
+    }
       textarea.value = element.text ?? '';
       textarea.focus();
       setIsCodeEdit(isCode);
-      setCodeLanguage(element.codeLanguage ?? 'code');
-      if (findActive && findQuery) {
+      const lang = element.codeLanguage ?? 'code';
+      setCodeLanguage(lang);
+      // Always build the overlay immediately — updateEditorOverlay uses stale isCodeEdit state
+      if (isCode) {
+        setEditorOverlayHtml(buildCodeHighlightHtml(element.text ?? '', lang, findActive && findQuery ? findQuery : ''));
+      } else if (findActive && findQuery) {
         updateEditorOverlay(findQuery);
       }
 
@@ -925,10 +923,9 @@ export function Canvas() {
         const lineIndex = Math.max(0, Math.floor(relY / lineHeight));
         const lines = text.split('\n');
 
-        // Calculate character position in the clicked line
         let charPos = 0;
         for (let i = 0; i < Math.min(lineIndex, lines.length); i++) {
-          charPos += lines[i].length + 1; // +1 for newline
+          charPos += lines[i].length + 1;
         }
 
         if (lineIndex < lines.length) {
@@ -1005,6 +1002,7 @@ export function Canvas() {
       editingElementIdRef.current = null;
       interactionRef.current = { type: 'none' };
       setIsCodeEdit(false);
+      setEditorOverlayHtml('');
       // Reset find bar state
       findBarActiveRef.current = false;
       setFindActive(false);
@@ -1246,7 +1244,8 @@ export function Canvas() {
           const ta = e.currentTarget;
           const isCodeEditLocal = isCodeEdit;
           const fontFamily = ta.style.fontFamily;
-          const padding = isCodeEditLocal ? 32 : 0; // 16px padding on each side for code
+          const currentZoom = useCanvasStore.getState().zoom;
+          const padding = isCodeEditLocal ? Math.round(32 * currentZoom) : 0;
           
           // Auto-grow height
           ta.style.height = 'auto';
@@ -1273,7 +1272,9 @@ export function Canvas() {
             }
           }
 
-          if (findActive && findQuery) {
+          if (isCodeEdit) {
+            setEditorOverlayHtml(buildCodeHighlightHtml(ta.value, codeLanguage, findActive && findQuery ? findQuery : ''));
+          } else if (findActive && findQuery) {
             updateEditorOverlay(findQuery);
           }
         }}

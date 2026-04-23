@@ -113,7 +113,7 @@ export function ActionBar() {
   };
 
   return (
-    <div className="flex flex-col gap-1">
+    <div className="flex flex-col gap-1.5">
       <IconButton title="Undo (Ctrl+Z)" onClick={undo} className={canUndo ? '' : 'opacity-40'}>
         <UndoIcon />
       </IconButton>
@@ -121,7 +121,7 @@ export function ActionBar() {
         <RedoIcon />
       </IconButton>
 
-      <div className="h-px w-full bg-gray-950/[0.05] dark:bg-white/[0.06] my-2" />
+      <div className="h-px w-full bg-gray-950/[0.05] dark:bg-white/[0.06] my-3" />
 
       <IconButton title="Delete selected (Del)" onClick={handleDelete}>
         <TrashIcon />
@@ -130,7 +130,7 @@ export function ActionBar() {
         <ClearIcon />
       </IconButton>
 
-      <div className="h-px w-full bg-gray-950/[0.05] dark:bg-white/[0.06] my-2" />
+      <div className="h-px w-full bg-gray-950/[0.05] dark:bg-white/[0.06] my-3" />
 
       <IconButton title="Toggle grid (G)" onClick={toggleGrid} active={showGrid}>
         <GridIcon />
@@ -139,7 +139,7 @@ export function ActionBar() {
         {theme === 'dark' ? <SunIcon /> : <MoonIcon />}
       </IconButton>
 
-      <div className="h-px w-full bg-gray-950/[0.05] dark:bg-white/[0.06] my-2" />
+      <div className="h-px w-full bg-gray-950/[0.05] dark:bg-white/[0.06] my-3" />
 
       <IconButton title="Open Project (.mcv)" onClick={handleOpenProject}>
         <UploadIcon />
@@ -222,7 +222,7 @@ export function ActionBar() {
       </div>
 
       {/* Zoom indicator & zoom to fit */}
-      <div className="h-px w-full bg-gray-950/[0.05] dark:bg-white/[0.06] my-2" />
+      <div className="h-px w-full bg-gray-950/[0.05] dark:bg-white/[0.06] my-3" />
       <IconButton
         title="Zoom to fit (Ctrl+1)"
         onClick={() => {
@@ -243,11 +243,11 @@ export function ActionBar() {
           <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
         </svg>
       </IconButton>
-      <span className="text-xs text-gray-500 dark:text-gray-400 text-center tabular-nums font-medium py-1">
+      <span className="text-xs text-gray-500 dark:text-gray-400 text-center tabular-nums font-medium bg-gray-100/80 dark:bg-white/[0.06] rounded-lg px-2 py-1">
         {Math.round(zoom * 100)}%
       </span>
 
-      <div className="h-px w-full bg-gray-950/[0.05] dark:bg-white/[0.06] my-2" />
+      <div className="h-px w-full bg-gray-950/[0.05] dark:bg-white/[0.06] my-3" />
       <IconButton title="Keyboard shortcuts (?)" onClick={() => useCanvasStore.getState().toggleShortcuts()}>
         <HelpIcon />
       </IconButton>
