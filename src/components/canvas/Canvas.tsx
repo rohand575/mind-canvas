@@ -42,6 +42,7 @@ export function Canvas() {
   const textPositionRef = useRef<Point | null>(null);
   const selectionBoxRef = useRef<Bounds | null>(null);
   const editingElementIdRef = useRef<string | null>(null);
+  const rightClickPendingRef = useRef<{ startX: number; startY: number; hitElement: CanvasElement | null } | null>(null);
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
 
   // ─── Find state / mode ───────────────────────────────────────
@@ -501,23 +502,16 @@ export function Canvas() {
   // ─── Mouse Down ───────────────────────────────────────────────
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
-      // Right-click: context menu only when clicking ON an element, otherwise always pan
+      // Right-click: always start pan; show context menu on mouseup only if mouse didn't move
       if (e.button === 2) {
         e.preventDefault();
         const canvasPoint = screenToCanvas(e.clientX, e.clientY);
         const { elements } = useElementStore.getState();
         const sortedDesc = [...elements].sort((a, b) => b.zIndex - a.zIndex);
-        const hitElement = sortedDesc.find((el) => hitTestElement(canvasPoint, el));
-        if (hitElement) {
-          const { selectedIds } = useToolStore.getState();
-          if (!selectedIds.includes(hitElement.id)) {
-            useToolStore.getState().setSelectedIds([hitElement.id]);
-          }
-          setContextMenu({ x: e.clientX, y: e.clientY });
-        } else {
-          startRightClickPan(e.clientX, e.clientY);
-          if (canvasRef.current) canvasRef.current.style.cursor = 'grabbing';
-        }
+        const hitElement = sortedDesc.find((el) => hitTestElement(canvasPoint, el)) ?? null;
+        rightClickPendingRef.current = { startX: e.clientX, startY: e.clientY, hitElement };
+        startRightClickPan(e.clientX, e.clientY);
+        if (canvasRef.current) canvasRef.current.style.cursor = 'grabbing';
         return;
       }
 
@@ -766,8 +760,26 @@ export function Canvas() {
   );
 
   // ─── Mouse Up ─────────────────────────────────────────────────
-  const handleMouseUp = useCallback(() => {
+  const handleMouseUp = useCallback((e?: React.MouseEvent) => {
     endPan();
+
+    // Right-click: show context menu only if mouse barely moved (was a click, not a drag)
+    if (rightClickPendingRef.current) {
+      const { startX, startY, hitElement } = rightClickPendingRef.current;
+      rightClickPendingRef.current = null;
+      if (e?.button === 2) {
+        const dx = Math.abs(e.clientX - startX);
+        const dy = Math.abs(e.clientY - startY);
+        if (dx < 4 && dy < 4 && hitElement) {
+          const { selectedIds } = useToolStore.getState();
+          if (!selectedIds.includes(hitElement.id)) {
+            useToolStore.getState().setSelectedIds([hitElement.id]);
+          }
+          setContextMenu({ x: e.clientX, y: e.clientY });
+          return;
+        }
+      }
+    }
 
     const interaction = interactionRef.current;
 
