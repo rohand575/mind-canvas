@@ -501,16 +501,16 @@ export function Canvas() {
   // ─── Mouse Down ───────────────────────────────────────────────
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
-      // Right-click: show context menu if elements selected, otherwise pan
+      // Right-click: context menu only when clicking ON an element, otherwise always pan
       if (e.button === 2) {
         e.preventDefault();
         const canvasPoint = screenToCanvas(e.clientX, e.clientY);
-        const { selectedIds } = useToolStore.getState();
         const { elements } = useElementStore.getState();
         const sortedDesc = [...elements].sort((a, b) => b.zIndex - a.zIndex);
         const hitElement = sortedDesc.find((el) => hitTestElement(canvasPoint, el));
-        if (hitElement || selectedIds.length > 0) {
-          if (hitElement && !selectedIds.includes(hitElement.id)) {
+        if (hitElement) {
+          const { selectedIds } = useToolStore.getState();
+          if (!selectedIds.includes(hitElement.id)) {
             useToolStore.getState().setSelectedIds([hitElement.id]);
           }
           setContextMenu({ x: e.clientX, y: e.clientY });
