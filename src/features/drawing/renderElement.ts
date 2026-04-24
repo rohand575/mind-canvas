@@ -2,6 +2,7 @@ import type { RoughCanvas } from 'roughjs/bin/canvas';
 import type { Options as RoughOptions } from 'roughjs/bin/core';
 import type { CanvasElement } from '../../types';
 import { tokenizeLine, getTokenColor, CODE_THEME_DARK, CODE_FONT, CODE_LINE_HEIGHT, CODE_PADDING, CODE_BORDER_RADIUS } from '../../utils/codeDetection';
+import { wrapTextToLines } from '../../utils/textWrap';
 
 // Cache loaded images so the render loop doesn't recreate them every frame
 const imageCache = new Map<string, HTMLImageElement>();
@@ -185,12 +186,17 @@ export function renderElement(
       if (element.isCode) {
         renderCodeBlock(ctx, element, renderOptions?.textHighlights);
       } else {
-        ctx.font = `${element.fontSize ?? 40}px 'Virgil', 'Segoe Print', 'Comic Sans MS', cursive`;
+        const fontSize = element.fontSize ?? 40;
+        ctx.font = `${fontSize}px 'Virgil', 'Segoe Print', 'Comic Sans MS', cursive`;
         ctx.textBaseline = 'top';
-        const lines = (element.text ?? '').split('\n');
-        const lineHeight = (element.fontSize ?? 40) * 1.3;
+        const lineHeight = fontSize * 1.3;
 
-        if (renderOptions?.textHighlights?.length) {
+        const rawText = element.text ?? '';
+        const lines = element.textWrap && element.width > 0
+          ? wrapTextToLines(rawText, element.width, ctx)
+          : rawText.split('\n');
+
+        if (!element.textWrap && renderOptions?.textHighlights?.length) {
           ctx.fillStyle = 'rgba(252,232,170,0.85)';
           const lineStarts = lines.reduce<number[]>((acc, _line, i) => {
             acc.push(i === 0 ? 0 : acc[i - 1] + lines[i - 1].length + 1);

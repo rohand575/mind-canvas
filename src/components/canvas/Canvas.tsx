@@ -10,7 +10,10 @@ import { renderGrid } from '../../features/drawing/renderGrid';
 import { renderSelection, renderSelectionBox } from '../../features/selection/renderSelection';
 import { hitTestElement, getResizeHandleAtPoint, normalizeBounds, getElementBounds, boundsOverlap } from '../../utils/geometry';
 import { createElement } from '../../utils/createElement';
+import { wrapTextToLines } from '../../utils/textWrap';
 import { GRID_SIZE } from '../../constants';
+
+const TEXT_WRAP_PADDING = 8;
 import { ContextMenu } from './ContextMenu';
 import { FindBar } from './FindBar';
 import { tokenizeLine, getTokenColor, CODE_THEME_DARK, CODE_FONT } from '../../utils/codeDetection';
@@ -29,7 +32,7 @@ type InteractionMode =
   | { type: 'none' }
   | { type: 'drawing'; element: CanvasElement }
   | { type: 'moving'; startX: number; startY: number; originals: Map<string, { x: number; y: number }> }
-  | { type: 'resizing'; elementId: string; handle: ResizeHandle; startX: number; startY: number; original: { x: number; y: number; width: number; height: number; fontSize?: number; points?: Point[] }; elementType: string }
+  | { type: 'resizing'; elementId: string; handle: ResizeHandle; startX: number; startY: number; original: { x: number; y: number; width: number; height: number; fontSize?: number; points?: Point[]; text?: string; textWrap?: boolean }; elementType: string }
   | { type: 'selecting'; startX: number; startY: number }
   | { type: 'text-input' };
 
@@ -40,6 +43,8 @@ export function Canvas() {
   const rafRef = useRef<number>(0);
   const textInputRef = useRef<HTMLTextAreaElement>(null);
   const textPositionRef = useRef<Point | null>(null);
+  const textContainerRef = useRef<CanvasElement | null>(null);
+  const isWrappedTextRef = useRef(false);
   const selectionBoxRef = useRef<Bounds | null>(null);
   const editingElementIdRef = useRef<string | null>(null);
   const rightClickPendingRef = useRef<{ startX: number; startY: number; hitElement: CanvasElement | null } | null>(null);
@@ -465,9 +470,11 @@ export function Canvas() {
     if (text) {
       saveSnapshot();
       const { strokeColor, strokeWidth, roughness, opacity, fontSize } = useToolStore.getState();
+      const container = textContainerRef.current;
+      const elementX = container ? container.x + TEXT_WRAP_PADDING : position.x;
       const newElement = createElement({
         type: 'text',
-        x: position.x,
+        x: elementX,
         y: position.y,
         text,
         strokeColor,
@@ -483,17 +490,37 @@ export function Canvas() {
         const ctx = canvas.getContext('2d');
         if (ctx) {
           ctx.font = `${fontSize}px 'Virgil', 'Segoe Print', 'Comic Sans MS', cursive`;
-          const lines = text.split('\n');
-          const maxWidth = Math.max(...lines.map((l) => ctx.measureText(l).width));
-          newElement.width = maxWidth;
-          newElement.height = lines.length * Math.round(fontSize * 1.3);
+          if (container) {
+            const wrapWidth = Math.max(20, container.width - TEXT_WRAP_PADDING * 2);
+            const wrappedLines = wrapTextToLines(text, wrapWidth, ctx);
+            newElement.width = wrapWidth;
+            newElement.height = wrappedLines.length * Math.round(fontSize * 1.3);
+            newElement.textWrap = true;
+            const textBottom = position.y + newElement.height + TEXT_WRAP_PADDING;
+            const rectBottom = container.y + container.height;
+            if (textBottom > rectBottom) {
+              useElementStore.getState().updateElement(container.id, {
+                height: textBottom - container.y + TEXT_WRAP_PADDING,
+              });
+            }
+          } else {
+            const lines = text.split('\n');
+            const maxWidth = Math.max(...lines.map((l) => ctx.measureText(l).width));
+            newElement.width = maxWidth;
+            newElement.height = lines.length * Math.round(fontSize * 1.3);
+          }
         }
       }
       useElementStore.getState().addElement(newElement);
     }
     textarea.style.display = 'none';
     textarea.value = '';
+    textarea.style.whiteSpace = 'pre';
+    textarea.style.wordBreak = '';
+    textarea.style.overflowWrap = '';
     textPositionRef.current = null;
+    textContainerRef.current = null;
+    isWrappedTextRef.current = false;
     interactionRef.current = { type: 'none' };
     // Cleanup listeners
     (textarea as any).__cleanupBlur?.();
@@ -562,13 +589,15 @@ export function Canvas() {
                 handle,
                 startX: canvasPoint.x,
                 startY: canvasPoint.y,
-                original: { 
-                  x: bounds.x, 
-                  y: bounds.y, 
-                  width: bounds.width, 
-                  height: bounds.height, 
+                original: {
+                  x: bounds.x,
+                  y: bounds.y,
+                  width: bounds.width,
+                  height: bounds.height,
                   fontSize: el.fontSize,
-                  points: el.points ? el.points.map(p => ({ ...p })) : undefined
+                  points: el.points ? el.points.map(p => ({ ...p })) : undefined,
+                  text: el.text,
+                  textWrap: el.textWrap,
                 },
                 elementType: el.type,
               };
@@ -717,13 +746,31 @@ export function Canvas() {
         if (handle.includes('s')) { height += dy; }
         if (handle.includes('n')) { y += dy; height -= dy; }
 
-        // For text elements, scale fontSize proportionally
+        // For text elements, handle resize
         if (elementType === 'text' && original.fontSize) {
-          const scaleX = original.width > 0 ? width / original.width : 1;
-          const scaleY = original.height > 0 ? height / original.height : 1;
-          const scale = Math.max(0.1, Math.min(scaleX, scaleY)); // Use smaller scale, min 10%
-          const newFontSize = Math.round(original.fontSize * scale);
-          updateElement(elementId, { x, y, width, height, fontSize: Math.max(8, Math.min(200, newFontSize)) });
+          if (original.textWrap && original.text) {
+            // Wrapped text: fix width, recalculate height from wrapped lines
+            const constrainedWidth = Math.max(20, width);
+            const canvas = canvasRef.current;
+            if (canvas) {
+              const ctx = canvas.getContext('2d');
+              if (ctx) {
+                ctx.font = `${original.fontSize}px 'Virgil', 'Segoe Print', 'Comic Sans MS', cursive`;
+                const wrappedLines = wrapTextToLines(original.text, constrainedWidth, ctx);
+                const newHeight = wrappedLines.length * Math.round(original.fontSize * 1.3);
+                updateElement(elementId, { x, y, width: constrainedWidth, height: newHeight });
+              } else {
+                updateElement(elementId, { x, y, width: Math.max(20, width), height });
+              }
+            }
+          } else {
+            // Non-wrapped text: scale fontSize proportionally
+            const scaleX = original.width > 0 ? width / original.width : 1;
+            const scaleY = original.height > 0 ? height / original.height : 1;
+            const scale = Math.max(0.1, Math.min(scaleX, scaleY));
+            const newFontSize = Math.round(original.fontSize * scale);
+            updateElement(elementId, { x, y, width, height, fontSize: Math.max(8, Math.min(200, newFontSize)) });
+          }
         } else if ((elementType === 'line' || elementType === 'arrow' || elementType === 'freehand') && original.points) {
           // For point-based elements, scale points proportionally
           const scaleX = original.width > 0 ? Math.abs(width) / original.width : 1;
@@ -898,6 +945,8 @@ export function Canvas() {
     const editLineHeight = isCode ? 1.5 : 1.3;
 
     const codePad = Math.round(16 * zoom);
+    isWrappedTextRef.current = element.textWrap ?? false;
+
     textarea.style.display = 'block';
     textarea.style.left = (element.x * zoom + offsetX) + 'px';
     textarea.style.top = (element.y * zoom + offsetY) + 'px';
@@ -908,6 +957,16 @@ export function Canvas() {
     textarea.style.caretColor = isCode ? '#cdd6f4' : element.strokeColor;
     textarea.style.width = ((element.width ?? 200) * zoom) + 'px';
     textarea.style.height = ((element.height ?? 100) * zoom) + 'px';
+
+    if (element.textWrap && !isCode) {
+      textarea.style.whiteSpace = 'pre-wrap';
+      textarea.style.wordBreak = 'break-word';
+      textarea.style.overflowWrap = 'break-word';
+    } else {
+      textarea.style.whiteSpace = 'pre';
+      textarea.style.wordBreak = '';
+      textarea.style.overflowWrap = '';
+    }
 
     if (isCode) {
       textarea.style.background = 'transparent';
@@ -984,6 +1043,13 @@ export function Canvas() {
               const maxWidth = Math.max(...lines.map((l) => ctx.measureText(l).width));
               updates.width = maxWidth + 32; // CODE_PADDING * 2
               updates.height = lines.length * Math.round(editFontSize * 1.5) + 32;
+            } else if (element.textWrap) {
+              ctx.font = `${element.fontSize ?? 40}px 'Virgil', 'Segoe Print', 'Comic Sans MS', cursive`;
+              const wrapWidth = element.width > 0 ? element.width : 200;
+              const wrappedLines = wrapTextToLines(text, wrapWidth, ctx);
+              updates.width = wrapWidth;
+              updates.height = wrappedLines.length * Math.round((element.fontSize ?? 40) * 1.3);
+              updates.textWrap = true;
             } else {
               ctx.font = `${element.fontSize ?? 40}px 'Virgil', 'Segoe Print', 'Comic Sans MS', cursive`;
               const lines = text.split('\n');
@@ -1011,6 +1077,10 @@ export function Canvas() {
         textarea.style.caretColor = '';
       }
       textarea.style.lineHeight = '1.3';
+      textarea.style.whiteSpace = 'pre';
+      textarea.style.wordBreak = '';
+      textarea.style.overflowWrap = '';
+      isWrappedTextRef.current = false;
       editingElementIdRef.current = null;
       interactionRef.current = { type: 'none' };
       setIsCodeEdit(false);
@@ -1077,15 +1147,44 @@ export function Canvas() {
     const textarea = textInputRef.current;
     if (!textarea) return;
 
+    // Detect if click is inside a rectangle — use topmost one
+    const { elements } = useElementStore.getState();
+    const rectContainer = [...elements]
+      .filter(el => el.type === 'rectangle')
+      .sort((a, b) => b.zIndex - a.zIndex)
+      .find(el =>
+        canvasPoint.x > el.x && canvasPoint.x < el.x + el.width &&
+        canvasPoint.y > el.y && canvasPoint.y < el.y + el.height
+      ) ?? null;
+
+    textContainerRef.current = rectContainer;
+    isWrappedTextRef.current = rectContainer !== null;
+
     // Store position for later save
     textPositionRef.current = canvasPoint;
 
     textarea.style.display = 'block';
-    textarea.style.left = (canvasPoint.x * zoom + offsetX) + 'px';
-    textarea.style.top = (canvasPoint.y * zoom + offsetY) + 'px';
     textarea.style.fontSize = (currentFontSize * zoom) + 'px';
     textarea.style.color = useToolStore.getState().strokeColor;
     textarea.value = '';
+
+    if (rectContainer) {
+      const wrapWidth = Math.max(20, rectContainer.width - TEXT_WRAP_PADDING * 2);
+      textarea.style.left = (rectContainer.x * zoom + offsetX + TEXT_WRAP_PADDING * zoom) + 'px';
+      textarea.style.top = (canvasPoint.y * zoom + offsetY) + 'px';
+      textarea.style.width = (wrapWidth * zoom) + 'px';
+      textarea.style.whiteSpace = 'pre-wrap';
+      textarea.style.wordBreak = 'break-word';
+      textarea.style.overflowWrap = 'break-word';
+    } else {
+      textarea.style.left = (canvasPoint.x * zoom + offsetX) + 'px';
+      textarea.style.top = (canvasPoint.y * zoom + offsetY) + 'px';
+      textarea.style.width = '';
+      textarea.style.whiteSpace = 'pre';
+      textarea.style.wordBreak = '';
+      textarea.style.overflowWrap = '';
+    }
+
     textarea.focus();
     if (findActive && findQuery) {
       updateEditorOverlay(findQuery);
@@ -1104,9 +1203,11 @@ export function Canvas() {
       if (text) {
         saveSnapshot();
         const { strokeColor, strokeWidth, roughness, opacity, fontSize } = useToolStore.getState();
+        const container = textContainerRef.current;
+        const elementX = container ? container.x + TEXT_WRAP_PADDING : position.x;
         const newElement = createElement({
           type: 'text',
-          x: position.x,
+          x: elementX,
           y: position.y,
           text,
           strokeColor,
@@ -1122,10 +1223,26 @@ export function Canvas() {
           const ctx = canvas.getContext('2d');
           if (ctx) {
             ctx.font = `${fontSize}px 'Virgil', 'Segoe Print', 'Comic Sans MS', cursive`;
-            const lines = text.split('\n');
-            const maxWidth = Math.max(...lines.map((l) => ctx.measureText(l).width));
-            newElement.width = maxWidth;
-            newElement.height = lines.length * Math.round(fontSize * 1.3);
+            if (container) {
+              const wrapWidth = Math.max(20, container.width - TEXT_WRAP_PADDING * 2);
+              const wrappedLines = wrapTextToLines(text, wrapWidth, ctx);
+              newElement.width = wrapWidth;
+              newElement.height = wrappedLines.length * Math.round(fontSize * 1.3);
+              newElement.textWrap = true;
+              // Expand container if text overflows vertically
+              const textBottom = position.y + newElement.height + TEXT_WRAP_PADDING;
+              const rectBottom = container.y + container.height;
+              if (textBottom > rectBottom) {
+                useElementStore.getState().updateElement(container.id, {
+                  height: textBottom - container.y + TEXT_WRAP_PADDING,
+                });
+              }
+            } else {
+              const lines = text.split('\n');
+              const maxWidth = Math.max(...lines.map((l) => ctx.measureText(l).width));
+              newElement.width = maxWidth;
+              newElement.height = lines.length * Math.round(fontSize * 1.3);
+            }
           }
         }
         useElementStore.getState().addElement(newElement);
@@ -1134,11 +1251,15 @@ export function Canvas() {
         if (!lockToolMode) {
           useToolStore.getState().setActiveTool('select');
         }
-
       }
       textarea.style.display = 'none';
       textarea.value = '';
+      textarea.style.whiteSpace = 'pre';
+      textarea.style.wordBreak = '';
+      textarea.style.overflowWrap = '';
       textPositionRef.current = null;
+      textContainerRef.current = null;
+      isWrappedTextRef.current = false;
       interactionRef.current = { type: 'none' };
       (textarea as any).__cleanupBlur?.();
       (textarea as any).__cleanupKeydown?.();
@@ -1250,7 +1371,6 @@ export function Canvas() {
           minWidth: '20px',
           minHeight: '1.5em',
           lineHeight: 1.3,
-          whiteSpace: 'pre',
         }}
         onInput={(e) => {
           const ta = e.currentTarget;
@@ -1262,24 +1382,27 @@ export function Canvas() {
           // Auto-grow height
           ta.style.height = 'auto';
           ta.style.height = ta.scrollHeight + 'px';
-          // Auto-grow width based on content
-          const lines = ta.value.split('\n');
-          const canvas = canvasRef.current;
-          if (canvas) {
-            const ctx = canvas.getContext('2d');
-            if (ctx) {
-              ctx.font = ta.style.fontSize + ' ' + fontFamily;
-              const maxWidth = Math.max(20, ...lines.map(line => ctx.measureText(line || ' ').width));
-              ta.style.width = (maxWidth + 20 + padding) + 'px';
-              
-              // Auto-pan canvas if text extends near edge
-              const taRight = parseFloat(ta.style.left) + maxWidth + 20 + padding;
-              const screenRight = window.innerWidth - 80; // Leave space for right toolbar
-              if (taRight > screenRight) {
-                const panAmount = taRight - screenRight + 50;
-                const { offsetX, offsetY } = useCanvasStore.getState();
-                useCanvasStore.getState().setOffset(offsetX - panAmount, offsetY);
-                ta.style.left = (parseFloat(ta.style.left) - panAmount) + 'px';
+
+          if (!isWrappedTextRef.current) {
+            // Auto-grow width based on content (non-wrapped only)
+            const lines = ta.value.split('\n');
+            const canvas = canvasRef.current;
+            if (canvas) {
+              const ctx = canvas.getContext('2d');
+              if (ctx) {
+                ctx.font = ta.style.fontSize + ' ' + fontFamily;
+                const maxWidth = Math.max(20, ...lines.map(line => ctx.measureText(line || ' ').width));
+                ta.style.width = (maxWidth + 20 + padding) + 'px';
+
+                // Auto-pan canvas if text extends near edge
+                const taRight = parseFloat(ta.style.left) + maxWidth + 20 + padding;
+                const screenRight = window.innerWidth - 80;
+                if (taRight > screenRight) {
+                  const panAmount = taRight - screenRight + 50;
+                  const { offsetX, offsetY } = useCanvasStore.getState();
+                  useCanvasStore.getState().setOffset(offsetX - panAmount, offsetY);
+                  ta.style.left = (parseFloat(ta.style.left) - panAmount) + 'px';
+                }
               }
             }
           }

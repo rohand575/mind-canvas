@@ -32,6 +32,7 @@ export interface CanvasElement {
   // For text elements
   text?: string;
   fontSize?: number;
+  textWrap?: boolean; // wrap text at element.width
   // For code elements (text with syntax highlighting)
   isCode?: boolean;
   codeLanguage?: string;
