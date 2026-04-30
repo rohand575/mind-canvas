@@ -623,23 +623,41 @@ export function Canvas() {
             setSelectedIds([hitElement.id]);
           }
 
-          // Start moving
           saveSnapshot();
           const currentSelected = e.shiftKey
             ? useToolStore.getState().selectedIds
             : (selectedIds.includes(hitElement.id) ? selectedIds : [hitElement.id]);
 
-          const originals = new Map<string, { x: number; y: number }>();
-          for (const id of currentSelected) {
-            const el = elements.find((e) => e.id === id);
-            if (el) originals.set(id, { x: el.x, y: el.y });
+          if (e.altKey) {
+            // Alt+drag: duplicate selected elements at same position and drag the copies
+            const { duplicateElements } = useElementStore.getState();
+            const duplicated = duplicateElements(currentSelected, 0, 0);
+            const newIds = duplicated.map((d) => d.id);
+            setSelectedIds(newIds);
+            const originals = new Map<string, { x: number; y: number }>();
+            for (const dup of duplicated) {
+              originals.set(dup.id, { x: dup.x, y: dup.y });
+            }
+            interactionRef.current = {
+              type: 'moving',
+              startX: canvasPoint.x,
+              startY: canvasPoint.y,
+              originals,
+            };
+          } else {
+            // Normal move
+            const originals = new Map<string, { x: number; y: number }>();
+            for (const id of currentSelected) {
+              const el = elements.find((e) => e.id === id);
+              if (el) originals.set(id, { x: el.x, y: el.y });
+            }
+            interactionRef.current = {
+              type: 'moving',
+              startX: canvasPoint.x,
+              startY: canvasPoint.y,
+              originals,
+            };
           }
-          interactionRef.current = {
-            type: 'moving',
-            startX: canvasPoint.x,
-            startY: canvasPoint.y,
-            originals,
-          };
         } else {
           // Start selection box
           if (!e.shiftKey) clearSelection();

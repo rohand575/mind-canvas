@@ -8,7 +8,7 @@ interface ElementStore {
   addElement: (element: CanvasElement) => void;
   updateElement: (id: string, updates: Partial<CanvasElement>) => void;
   removeElements: (ids: string[]) => void;
-  duplicateElements: (ids: string[]) => CanvasElement[];
+  duplicateElements: (ids: string[], offsetX?: number, offsetY?: number) => CanvasElement[];
   bringForward: (id: string) => void;
   sendBackward: (id: string) => void;
   bringToFront: (id: string) => void;
@@ -37,7 +37,7 @@ export const useElementStore = create<ElementStore>((set, get) => ({
       elements: s.elements.filter((el) => !ids.includes(el.id)),
     })),
 
-  duplicateElements: (ids) => {
+  duplicateElements: (ids, offsetX = 20, offsetY = 20) => {
     const { elements, getMaxZIndex } = get();
     let maxZ = getMaxZIndex();
     const toDuplicate = elements.filter((el) => ids.includes(el.id));
@@ -47,8 +47,8 @@ export const useElementStore = create<ElementStore>((set, get) => ({
       return {
         ...el,
         id: crypto.randomUUID(),
-        x: el.x + 20,
-        y: el.y + 20,
+        x: el.x + offsetX,
+        y: el.y + offsetY,
         zIndex: maxZ,
         createdAt: now,
         updatedAt: now,
