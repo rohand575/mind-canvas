@@ -11,6 +11,7 @@ const SHORTCUT_GROUPS = [
     shortcuts: [
       { key: 'V', description: 'Select' },
       { key: 'H', description: 'Hand / Pan' },
+      { key: 'F', description: 'Frame / Artboard' },
       { key: 'R', description: 'Rectangle' },
       { key: 'D', description: 'Diamond' },
       { key: 'O', description: 'Ellipse' },
@@ -61,6 +62,17 @@ const SHORTCUT_GROUPS = [
       { key: 'Ctrl+[', description: 'Send backward' },
       { key: 'Ctrl+Shift+]', description: 'Bring to front' },
       { key: 'Ctrl+Shift+[', description: 'Send to back' },
+    ],
+  },
+  {
+    title: 'New Features',
+    shortcuts: [
+      { key: 'Ctrl+G', description: 'Group selected elements' },
+      { key: 'Ctrl+Shift+G', description: 'Ungroup elements' },
+      { key: 'Ctrl+L', description: 'Lock / Unlock element' },
+      { key: 'Ctrl+Click', description: 'Open hyperlink on element' },
+      { key: 'Dbl-click arrow', description: 'Edit connector label' },
+      { key: 'Dbl-click frame', description: 'Rename frame' },
     ],
   },
 ];

@@ -1,4 +1,4 @@
-import type { Point, Bounds, CanvasElement, ResizeHandle } from '../types';
+import type { Point, Bounds, CanvasElement, ResizeHandle, ConnectionPoint } from '../types';
 import { HANDLE_SIZE } from '../constants';
 
 /**
@@ -46,9 +46,24 @@ export function isPointInBounds(point: Point, bounds: Bounds, padding = 0): bool
 }
 
 /**
+ * Check if inner bounds are fully contained within outer bounds
+ */
+export function boundsContainedIn(inner: Bounds, outer: Bounds): boolean {
+  return (
+    inner.x >= outer.x &&
+    inner.y >= outer.y &&
+    inner.x + inner.width <= outer.x + outer.width &&
+    inner.y + inner.height <= outer.y + outer.height
+  );
+}
+
+/**
  * Check if a point hits an element
  */
 export function hitTestElement(point: Point, element: CanvasElement, tolerance = 4): boolean {
+  // Locked elements are not hit-testable
+  if (element.locked) return false;
+
   const bounds = getElementBounds(element);
 
   if (element.type === 'line' || element.type === 'arrow') {
@@ -78,12 +93,10 @@ export function hitTestElement(point: Point, element: CanvasElement, tolerance =
     const hw = Math.abs(element.width) / 2;
     const hh = Math.abs(element.height) / 2;
     if (hw === 0 || hh === 0) return false;
-    // Point-in-diamond: |px - cx| / hw + |py - cy| / hh <= 1
     const dist = Math.abs(point.x - cx) / (hw + tolerance) + Math.abs(point.y - cy) / (hh + tolerance);
     if (element.fillColor !== 'transparent') {
       return dist <= 1;
     }
-    // For non-filled diamond, check if near border
     const innerDist = Math.abs(point.x - cx) / Math.max(1, hw - tolerance - element.strokeWidth) +
                       Math.abs(point.y - cy) / Math.max(1, hh - tolerance - element.strokeWidth);
     return dist <= 1 && innerDist >= 1;
@@ -92,6 +105,20 @@ export function hitTestElement(point: Point, element: CanvasElement, tolerance =
   // Images and text are always "filled" — hit anywhere inside bounds
   if (element.type === 'image' || element.type === 'text') {
     return isPointInBounds(point, bounds, tolerance);
+  }
+
+  // Frame: hit on border only (not inside)
+  if (element.type === 'frame') {
+    const borderTolerance = tolerance + 3;
+    return (
+      isPointInBounds(point, bounds, borderTolerance) &&
+      !isPointInBounds(point, {
+        x: bounds.x + borderTolerance,
+        y: bounds.y + borderTolerance,
+        width: Math.max(0, bounds.width - 2 * borderTolerance),
+        height: Math.max(0, bounds.height - 2 * borderTolerance),
+      })
+    );
   }
 
   // For filled shapes, check if inside bounds
@@ -171,7 +198,6 @@ export function getResizeHandleAtPoint(
 
 /**
  * Get the index of an endpoint handle at the given point for line/arrow elements.
- * Returns the index into element.points, or null if no handle is hit.
  */
 export function getEndpointHandleAtPoint(
   point: Point,
@@ -180,7 +206,6 @@ export function getEndpointHandleAtPoint(
   if (element.type !== 'line' && element.type !== 'arrow') return null;
   if (!element.points || element.points.length === 0) return null;
 
-  // Endpoint handles are circular and slightly larger than corner handles for easier grabbing
   const radius = HANDLE_SIZE / 2 + 3;
   for (let i = 0; i < element.points.length; i++) {
     const p = element.points[i];
@@ -223,3 +248,68 @@ export function boundsOverlap(a: Bounds, b: Bounds): boolean {
 export function snapToGrid(value: number, gridSize: number): number {
   return Math.round(value / gridSize) * gridSize;
 }
+
+// ─── Connection Points ────────────────────────────────────────────
+
+/**
+ * Get the absolute canvas coordinates of a connection point on a shape element
+ */
+export function getConnectionPointAbsolute(element: CanvasElement, point: ConnectionPoint): Point {
+  const b = getElementBounds(element);
+  switch (point) {
+    case 'n':      return { x: b.x + b.width / 2, y: b.y };
+    case 's':      return { x: b.x + b.width / 2, y: b.y + b.height };
+    case 'e':      return { x: b.x + b.width, y: b.y + b.height / 2 };
+    case 'w':      return { x: b.x, y: b.y + b.height / 2 };
+    case 'center': return { x: b.x + b.width / 2, y: b.y + b.height / 2 };
+  }
+}
+
+/**
+ * All 5 connection points for a shape element as absolute coordinates
+ */
+export function getAllConnectionPoints(element: CanvasElement): Array<{ point: ConnectionPoint; x: number; y: number }> {
+  const b = getElementBounds(element);
+  return [
+    { point: 'n',      x: b.x + b.width / 2, y: b.y },
+    { point: 's',      x: b.x + b.width / 2, y: b.y + b.height },
+    { point: 'e',      x: b.x + b.width,      y: b.y + b.height / 2 },
+    { point: 'w',      x: b.x,                y: b.y + b.height / 2 },
+    { point: 'center', x: b.x + b.width / 2, y: b.y + b.height / 2 },
+  ];
+}
+
+/**
+ * Find the nearest connection point within snapDistance of cursor,
+ * excluding elements in excludeIds (e.g., the arrow being drawn).
+ * Returns null if nothing is close enough.
+ */
+export function findNearestConnectionPoint(
+  cursor: Point,
+  elements: CanvasElement[],
+  excludeIds: string[],
+  snapDistance: number,
+): { elementId: string; point: ConnectionPoint; x: number; y: number } | null {
+  const snapTypes: ElementType[] = ['rectangle', 'diamond', 'ellipse', 'frame', 'text', 'image'];
+  let bestDist = snapDistance;
+  let best: { elementId: string; point: ConnectionPoint; x: number; y: number } | null = null;
+
+  for (const el of elements) {
+    if (excludeIds.includes(el.id)) continue;
+    if (el.locked) continue;
+    if (!snapTypes.includes(el.type)) continue;
+
+    for (const cp of getAllConnectionPoints(el)) {
+      const d = Math.hypot(cursor.x - cp.x, cursor.y - cp.y);
+      if (d < bestDist) {
+        bestDist = d;
+        best = { elementId: el.id, point: cp.point, x: cp.x, y: cp.y };
+      }
+    }
+  }
+
+  return best;
+}
+
+// needed for type narrowing above
+type ElementType = import('../types').ElementType;

@@ -84,6 +84,16 @@ export function HandIcon() {
   );
 }
 
+export function FrameIcon() {
+  return (
+    <svg className={iconClass} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="6" width="18" height="15" rx="1" strokeDasharray="4 2" />
+      <line x1="3" y1="3" x2="9" y2="3" />
+      <line x1="3" y1="3" x2="3" y2="6" />
+    </svg>
+  );
+}
+
 export function SunIcon() {
   return (
     <svg className={iconClass} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -200,9 +210,102 @@ export function HelpIcon() {
   );
 }
 
+export function LibraryIcon() {
+  return (
+    <svg className={iconClass} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="3" width="6" height="18" rx="1" />
+      <rect x="10" y="3" width="6" height="18" rx="1" />
+      <path d="M18 3l4 18" />
+    </svg>
+  );
+}
+
+// ─── Alignment Icons ─────────────────────────────────────────────
+
+export function AlignLeftIcon() {
+  return (
+    <svg className={iconClass} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="3" y1="3" x2="3" y2="21" />
+      <rect x="5" y="6" width="10" height="4" rx="1" />
+      <rect x="5" y="14" width="16" height="4" rx="1" />
+    </svg>
+  );
+}
+
+export function AlignCenterXIcon() {
+  return (
+    <svg className={iconClass} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="12" y1="3" x2="12" y2="21" />
+      <rect x="7" y="6" width="10" height="4" rx="1" />
+      <rect x="4" y="14" width="16" height="4" rx="1" />
+    </svg>
+  );
+}
+
+export function AlignRightIcon() {
+  return (
+    <svg className={iconClass} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="21" y1="3" x2="21" y2="21" />
+      <rect x="9" y="6" width="10" height="4" rx="1" />
+      <rect x="3" y="14" width="16" height="4" rx="1" />
+    </svg>
+  );
+}
+
+export function AlignTopIcon() {
+  return (
+    <svg className={iconClass} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="3" y1="3" x2="21" y2="3" />
+      <rect x="6" y="5" width="4" height="10" rx="1" />
+      <rect x="14" y="5" width="4" height="16" rx="1" />
+    </svg>
+  );
+}
+
+export function AlignCenterYIcon() {
+  return (
+    <svg className={iconClass} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="3" y1="12" x2="21" y2="12" />
+      <rect x="6" y="7" width="4" height="10" rx="1" />
+      <rect x="14" y="4" width="4" height="16" rx="1" />
+    </svg>
+  );
+}
+
+export function AlignBottomIcon() {
+  return (
+    <svg className={iconClass} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="3" y1="21" x2="21" y2="21" />
+      <rect x="6" y="9" width="4" height="10" rx="1" />
+      <rect x="14" y="3" width="4" height="16" rx="1" />
+    </svg>
+  );
+}
+
+export function DistributeHIcon() {
+  return (
+    <svg className={iconClass} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="3" y1="3" x2="3" y2="21" />
+      <line x1="21" y1="3" x2="21" y2="21" />
+      <rect x="9" y="7" width="6" height="10" rx="1" />
+    </svg>
+  );
+}
+
+export function DistributeVIcon() {
+  return (
+    <svg className={iconClass} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="3" y1="3" x2="21" y2="3" />
+      <line x1="3" y1="21" x2="21" y2="21" />
+      <rect x="7" y="9" width="10" height="6" rx="1" />
+    </svg>
+  );
+}
+
 export const TOOL_ICON_MAP: Record<string, () => React.JSX.Element> = {
   cursor: CursorIcon,
   hand: HandIcon,
+  frame: FrameIcon,
   square: SquareIcon,
   diamond: DiamondIcon,
   circle: CircleIcon,

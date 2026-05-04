@@ -7,17 +7,31 @@ import { useCanvasInteraction } from '../../hooks/useCanvasInteraction';
 import { useHistory } from '../../hooks/useHistory';
 import { renderElement } from '../../features/drawing/renderElement';
 import { renderGrid } from '../../features/drawing/renderGrid';
-import { renderSelection, renderSelectionBox } from '../../features/selection/renderSelection';
-import { hitTestElement, getResizeHandleAtPoint, getEndpointHandleAtPoint, normalizeBounds, getElementBounds, boundsOverlap } from '../../utils/geometry';
+import {
+  renderSelection,
+  renderSelectionBox,
+  renderAlignmentGuides,
+  renderConnectionPoints,
+} from '../../features/selection/renderSelection';
+import {
+  hitTestElement,
+  getResizeHandleAtPoint,
+  getEndpointHandleAtPoint,
+  normalizeBounds,
+  getElementBounds,
+  boundsOverlap,
+  boundsContainedIn,
+  findNearestConnectionPoint,
+} from '../../utils/geometry';
 import { createElement } from '../../utils/createElement';
 import { wrapTextToLines } from '../../utils/textWrap';
-import { GRID_SIZE } from '../../constants';
+import { GRID_SIZE, CONNECTOR_SNAP_DISTANCE, ALIGNMENT_SNAP_THRESHOLD } from '../../constants';
 
 const TEXT_WRAP_PADDING = 8;
 import { ContextMenu } from './ContextMenu';
 import { FindBar } from './FindBar';
 import { tokenizeLine, getTokenColor, CODE_THEME_DARK, CODE_FONT } from '../../utils/codeDetection';
-import type { CanvasElement, Point, ResizeHandle, Bounds } from '../../types';
+import type { CanvasElement, Point, ResizeHandle, Bounds, AlignmentGuide, ConnectionPoint } from '../../types';
 
 function snapToGridValue(val: number, gridSize: number): number {
   return Math.round(val / gridSize) * gridSize;
@@ -37,6 +51,64 @@ type InteractionMode =
   | { type: 'selecting'; startX: number; startY: number }
   | { type: 'text-input' };
 
+/** Compute alignment guides for elements being moved */
+function computeAlignmentGuides(
+  movingBounds: Bounds[],
+  staticElements: CanvasElement[],
+  threshold: number,
+): { guides: AlignmentGuide[]; snapDx: number; snapDy: number } {
+  const guides: AlignmentGuide[] = [];
+  let snapDx = 0;
+  let snapDy = 0;
+
+  const movingLeft   = Math.min(...movingBounds.map(b => b.x));
+  const movingRight  = Math.max(...movingBounds.map(b => b.x + b.width));
+  const movingCX     = (movingLeft + movingRight) / 2;
+  const movingTop    = Math.min(...movingBounds.map(b => b.y));
+  const movingBottom = Math.max(...movingBounds.map(b => b.y + b.height));
+  const movingCY     = (movingTop + movingBottom) / 2;
+
+  const visExtent = { minY: movingTop - 400, maxY: movingBottom + 400, minX: movingLeft - 400, maxX: movingRight + 400 };
+
+  for (const el of staticElements) {
+    const b = getElementBounds(el);
+    const sLeft   = b.x;
+    const sRight  = b.x + b.width;
+    const sCX     = b.x + b.width / 2;
+    const sTop    = b.y;
+    const sBottom = b.y + b.height;
+    const sCY     = b.y + b.height / 2;
+
+    // Vertical guides (x alignment)
+    const vCandidates = [
+      { pos: sLeft,  dx: sLeft - movingLeft },
+      { pos: sRight, dx: sRight - movingRight },
+      { pos: sCX,    dx: sCX - movingCX },
+    ];
+    for (const c of vCandidates) {
+      if (Math.abs(c.dx) < threshold && (snapDx === 0 || Math.abs(c.dx) < Math.abs(snapDx))) {
+        snapDx = c.dx;
+        guides.push({ type: 'vertical', position: c.pos, start: visExtent.minY, end: visExtent.maxY });
+      }
+    }
+
+    // Horizontal guides (y alignment)
+    const hCandidates = [
+      { pos: sTop,    dy: sTop - movingTop },
+      { pos: sBottom, dy: sBottom - movingBottom },
+      { pos: sCY,     dy: sCY - movingCY },
+    ];
+    for (const c of hCandidates) {
+      if (Math.abs(c.dy) < threshold && (snapDy === 0 || Math.abs(c.dy) < Math.abs(snapDy))) {
+        snapDy = c.dy;
+        guides.push({ type: 'horizontal', position: c.pos, start: visExtent.minX, end: visExtent.maxX });
+      }
+    }
+  }
+
+  return { guides, snapDx, snapDy };
+}
+
 export function Canvas() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -49,10 +121,23 @@ export function Canvas() {
   const selectionBoxRef = useRef<Bounds | null>(null);
   const editingElementIdRef = useRef<string | null>(null);
   const rightClickPendingRef = useRef<{ startX: number; startY: number; hitElement: CanvasElement | null } | null>(null);
+
+  // Smart connector snap state
+  const connectionSnapRef = useRef<{ elementId: string; point: ConnectionPoint; x: number; y: number } | null>(null);
+  const isDrawingArrowRef = useRef(false);
+
+  // Alignment guide state
+  const alignmentGuidesRef = useRef<AlignmentGuide[]>([]);
+
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
 
-  // ─── Find state / mode ───────────────────────────────────────
-  const findBarActiveRef = useRef(false); // mirrors findActive, readable in closures
+  // Connector label editing
+  const [connectorLabelEdit, setConnectorLabelEdit] = useState<{
+    elementId: string; screenX: number; screenY: number; value: string;
+  } | null>(null);
+
+  // ─── Find state ─────────────────────────────────────────────
+  const findBarActiveRef = useRef(false);
   const [findActive, setFindActive] = useState(false);
   const [findQuery, setFindQuery] = useState('');
   const [findMode, setFindMode] = useState<'text' | 'canvas'>('text');
@@ -67,7 +152,7 @@ export function Canvas() {
     useCanvasInteraction();
   const { saveSnapshot } = useHistory();
 
-  // ─── Find helpers ─────────────────────────────────────────────
+  // ─── Find helpers ────────────────────────────────────────────
   const computeFindMatches = useCallback((query: string, text: string): number[] => {
     if (!query) return [];
     const result: number[] = [];
@@ -107,13 +192,10 @@ export function Canvas() {
     if (!canvas) return;
     const element = useElementStore.getState().elements.find((el) => el.id === elementId);
     if (!element) return;
-
     const bounds = getElementBounds(element);
     const { zoom } = useCanvasStore.getState();
-    const viewWidth = canvas.clientWidth;
-    const viewHeight = canvas.clientHeight;
-    const offsetX = viewWidth / 2 - (bounds.x + bounds.width / 2) * zoom;
-    const offsetY = viewHeight / 2 - (bounds.y + bounds.height / 2) * zoom;
+    const offsetX = canvas.clientWidth / 2 - (bounds.x + bounds.width / 2) * zoom;
+    const offsetY = canvas.clientHeight / 2 - (bounds.y + bounds.height / 2) * zoom;
     useCanvasStore.getState().setOffset(offsetX, offsetY);
   }, []);
 
@@ -130,9 +212,7 @@ export function Canvas() {
   const handleGlobalFindKeyDown = useCallback((e: KeyboardEvent) => {
     const target = e.target as HTMLElement;
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'f') {
-      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
-        return;
-      }
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) return;
       e.preventDefault();
       openCanvasFindBar();
     }
@@ -144,104 +224,76 @@ export function Canvas() {
 
   const buildCodeHighlightHtml = useCallback((text: string, language: string, query = '') => {
     const lowerQuery = query.toLowerCase();
-    return text
-      .split('\n')
-      .map((line) => {
-        const tokens = tokenizeLine(line, language);
-
-        const matchRanges: { start: number; end: number }[] = [];
-        if (query) {
-          const lowerLine = line.toLowerCase();
-          let idx = 0;
-          while (idx < lowerLine.length) {
-            const found = lowerLine.indexOf(lowerQuery, idx);
-            if (found === -1) break;
-            matchRanges.push({ start: found, end: found + query.length });
-            idx = found + query.length;
-          }
+    return text.split('\n').map((line) => {
+      const tokens = tokenizeLine(line, language);
+      const matchRanges: { start: number; end: number }[] = [];
+      if (query) {
+        const lowerLine = line.toLowerCase();
+        let idx = 0;
+        while (idx < lowerLine.length) {
+          const found = lowerLine.indexOf(lowerQuery, idx);
+          if (found === -1) break;
+          matchRanges.push({ start: found, end: found + query.length });
+          idx = found + query.length;
         }
-
-        let tokenOffset = 0;
-        return tokens
-          .map((token) => {
-            const color = getTokenColor(token.type, CODE_THEME_DARK);
-            if (!query || matchRanges.length === 0) {
-              tokenOffset += token.text.length;
-              return `<span style="color: ${color}">${escapeHtml(token.text)}</span>`;
-            }
-
-            const parts: string[] = [];
-            let processed = 0;
-            for (const range of matchRanges) {
-              if (range.end <= tokenOffset || range.start >= tokenOffset + token.text.length) continue;
-              const startInToken = Math.max(0, range.start - tokenOffset);
-              const endInToken = Math.min(token.text.length, range.end - tokenOffset);
-              if (startInToken > processed) {
-                parts.push(escapeHtml(token.text.slice(processed, startInToken)));
-              }
-              const inner = escapeHtml(token.text.slice(startInToken, endInToken));
-              parts.push(`<span style="background: rgba(252,232,170,0.8); color: ${color}">${inner}</span>`);
-              processed = endInToken;
-            }
-            if (processed < token.text.length) {
-              parts.push(escapeHtml(token.text.slice(processed)));
-            }
-            tokenOffset += token.text.length;
-            if (parts.length === 0) {
-              return `<span style="color: ${color}">${escapeHtml(token.text)}</span>`;
-            }
-            return `<span style="color: ${color}">${parts.join('')}</span>`;
-          })
-          .join('');
-      })
-      .join('\n');
+      }
+      let tokenOffset = 0;
+      return tokens.map((token) => {
+        const color = getTokenColor(token.type, CODE_THEME_DARK);
+        if (!query || matchRanges.length === 0) {
+          tokenOffset += token.text.length;
+          return `<span style="color: ${color}">${escapeHtml(token.text)}</span>`;
+        }
+        const parts: string[] = [];
+        let processed = 0;
+        for (const range of matchRanges) {
+          if (range.end <= tokenOffset || range.start >= tokenOffset + token.text.length) continue;
+          const startInToken = Math.max(0, range.start - tokenOffset);
+          const endInToken = Math.min(token.text.length, range.end - tokenOffset);
+          if (startInToken > processed) parts.push(escapeHtml(token.text.slice(processed, startInToken)));
+          parts.push(`<span style="background: rgba(252,232,170,0.8); color: ${color}">${escapeHtml(token.text.slice(startInToken, endInToken))}</span>`);
+          processed = endInToken;
+        }
+        if (processed < token.text.length) parts.push(escapeHtml(token.text.slice(processed)));
+        tokenOffset += token.text.length;
+        return parts.length === 0
+          ? `<span style="color: ${color}">${escapeHtml(token.text)}</span>`
+          : `<span style="color: ${color}">${parts.join('')}</span>`;
+      }).join('');
+    }).join('\n');
   }, [escapeHtml]);
 
   const buildPlainTextOverlayHtml = useCallback((text: string, query: string) => {
     const lowerQuery = query.toLowerCase();
-    return text
-      .split('\n')
-      .map((line) => {
-        if (!query) return escapeHtml(line);
-        const lowerLine = line.toLowerCase();
-        let idx = 0;
-        const parts: string[] = [];
-        while (idx < line.length) {
-          const found = lowerLine.indexOf(lowerQuery, idx);
-          if (found === -1) {
-            parts.push(escapeHtml(line.slice(idx)));
-            break;
-          }
-          if (found > idx) {
-            parts.push(escapeHtml(line.slice(idx, found)));
-          }
-          parts.push(`<span style="background: rgba(252,232,170,0.8);">${escapeHtml(line.slice(found, found + query.length))}</span>`);
-          idx = found + query.length;
-        }
-        return parts.join('') || '&nbsp;';
-      })
-      .join('<br>');
+    return text.split('\n').map((line) => {
+      if (!query) return escapeHtml(line);
+      const lowerLine = line.toLowerCase();
+      let idx = 0;
+      const parts: string[] = [];
+      while (idx < line.length) {
+        const found = lowerLine.indexOf(lowerQuery, idx);
+        if (found === -1) { parts.push(escapeHtml(line.slice(idx))); break; }
+        if (found > idx) parts.push(escapeHtml(line.slice(idx, found)));
+        parts.push(`<span style="background: rgba(252,232,170,0.8);">${escapeHtml(line.slice(found, found + query.length))}</span>`);
+        idx = found + query.length;
+      }
+      return parts.join('') || '&nbsp;';
+    }).join('<br>');
   }, [escapeHtml]);
 
   const buildEditorOverlayHtml = useCallback((value: string, query: string, code: boolean, language: string) => {
-    if (code) {
-      return buildCodeHighlightHtml(value, language, query);
-    }
+    if (code) return buildCodeHighlightHtml(value, language, query);
     if (!query) return '';
     return buildPlainTextOverlayHtml(value, query);
   }, [buildCodeHighlightHtml, buildPlainTextOverlayHtml]);
 
   const updateEditorOverlay = useCallback((query: string) => {
     const ta = textInputRef.current;
-    if (!ta) {
-      setEditorOverlayHtml('');
-      return;
-    }
+    if (!ta) { setEditorOverlayHtml(''); return; }
     setEditorOverlayHtml(buildEditorOverlayHtml(ta.value, query, isCodeEdit, codeLanguage));
   }, [buildEditorOverlayHtml, codeLanguage, isCodeEdit]);
 
   const scrollTextareaToChar = useCallback((ta: HTMLTextAreaElement, charIdx: number) => {
-    // Estimate the line the character is on and scroll to it
     const text = ta.value.substring(0, charIdx);
     const lineNumber = (text.match(/\n/g) ?? []).length;
     const lineHeight = parseFloat(ta.style.fontSize) * parseFloat(ta.style.lineHeight || '1.3');
@@ -252,7 +304,6 @@ export function Canvas() {
     findBarActiveRef.current = true;
     setFindActive(true);
     setFindMode('text');
-    // Populate initial query from textarea selection if text is selected
     const ta = textInputRef.current;
     if (ta) {
       const sel = ta.value.substring(ta.selectionStart, ta.selectionEnd).trim();
@@ -260,8 +311,7 @@ export function Canvas() {
         const matches = computeFindMatches(sel, ta.value);
         setFindQuery(sel);
         setFindMatches(matches);
-        const ci = matches.findIndex((m) => m >= ta.selectionStart);
-        setFindIdx(ci >= 0 ? ci : 0);
+        setFindIdx(matches.findIndex((m) => m >= ta.selectionStart) || 0);
         return;
       }
     }
@@ -289,13 +339,11 @@ export function Canvas() {
       setCanvasFindResults(results);
       setFindIdx(0);
       if (results.length > 0) {
-        const first = results[0];
-        useToolStore.getState().setSelectedIds([first.elementId]);
-        centerCanvasElement(first.elementId);
+        useToolStore.getState().setSelectedIds([results[0].elementId]);
+        centerCanvasElement(results[0].elementId);
       }
       return;
     }
-
     const ta = textInputRef.current;
     const matches = computeFindMatches(query, ta?.value ?? '');
     setFindMatches(matches);
@@ -308,16 +356,14 @@ export function Canvas() {
 
   const handleFindNext = useCallback(() => {
     if (findMode === 'canvas') {
-      if (canvasFindResults.length === 0) return;
+      if (!canvasFindResults.length) return;
       const newIdx = (findIdx + 1) % canvasFindResults.length;
       setFindIdx(newIdx);
-      const result = canvasFindResults[newIdx];
-      useToolStore.getState().setSelectedIds([result.elementId]);
-      centerCanvasElement(result.elementId);
+      useToolStore.getState().setSelectedIds([canvasFindResults[newIdx].elementId]);
+      centerCanvasElement(canvasFindResults[newIdx].elementId);
       return;
     }
-
-    if (findMatches.length === 0) return;
+    if (!findMatches.length) return;
     const newIdx = (findIdx + 1) % findMatches.length;
     setFindIdx(newIdx);
     const ta = textInputRef.current;
@@ -329,16 +375,14 @@ export function Canvas() {
 
   const handleFindPrev = useCallback(() => {
     if (findMode === 'canvas') {
-      if (canvasFindResults.length === 0) return;
+      if (!canvasFindResults.length) return;
       const newIdx = (findIdx - 1 + canvasFindResults.length) % canvasFindResults.length;
       setFindIdx(newIdx);
-      const result = canvasFindResults[newIdx];
-      useToolStore.getState().setSelectedIds([result.elementId]);
-      centerCanvasElement(result.elementId);
+      useToolStore.getState().setSelectedIds([canvasFindResults[newIdx].elementId]);
+      centerCanvasElement(canvasFindResults[newIdx].elementId);
       return;
     }
-
-    if (findMatches.length === 0) return;
+    if (!findMatches.length) return;
     const newIdx = (findIdx - 1 + findMatches.length) % findMatches.length;
     setFindIdx(newIdx);
     const ta = textInputRef.current;
@@ -348,16 +392,18 @@ export function Canvas() {
     }
   }, [canvasFindResults, findMatches, findIdx, findMode, findQuery, centerCanvasElement, scrollTextareaToChar]);
 
-  // ─── Screen ↔ Canvas coordinate conversion ────────────────────
+  // ─── Coordinate conversion ───────────────────────────────────
   const screenToCanvas = useCallback((clientX: number, clientY: number): Point => {
     const { offsetX, offsetY, zoom } = useCanvasStore.getState();
-    return {
-      x: (clientX - offsetX) / zoom,
-      y: (clientY - offsetY) / zoom,
-    };
+    return { x: (clientX - offsetX) / zoom, y: (clientY - offsetY) / zoom };
   }, []);
 
-  // ─── Render Loop ──────────────────────────────────────────────
+  const canvasToScreen = useCallback((x: number, y: number): Point => {
+    const { offsetX, offsetY, zoom } = useCanvasStore.getState();
+    return { x: x * zoom + offsetX, y: y * zoom + offsetY };
+  }, []);
+
+  // ─── Render Loop ─────────────────────────────────────────────
   const render = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -366,87 +412,79 @@ export function Canvas() {
 
     const { offsetX, offsetY, zoom, showGrid, theme } = useCanvasStore.getState();
     const { elements } = useElementStore.getState();
-    const { selectedIds } = useToolStore.getState();
+    const { selectedIds, activeTool } = useToolStore.getState();
     const isDark = theme === 'dark';
 
     const dpr = window.devicePixelRatio || 1;
     const w = canvas.clientWidth;
     const h = canvas.clientHeight;
 
-    // Set canvas resolution
     if (canvas.width !== w * dpr || canvas.height !== h * dpr) {
       canvas.width = w * dpr;
       canvas.height = h * dpr;
     }
 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-
-    // Clear
     ctx.fillStyle = isDark ? '#1a1a2e' : '#f8f9fa';
     ctx.fillRect(0, 0, w, h);
 
-    // Grid
-    if (showGrid) {
-      renderGrid(ctx, w, h, offsetX, offsetY, zoom, isDark);
-    }
+    if (showGrid) renderGrid(ctx, w, h, offsetX, offsetY, zoom, isDark);
 
-    // Transform for canvas pan/zoom
     ctx.save();
     ctx.translate(offsetX, offsetY);
     ctx.scale(zoom, zoom);
 
-    // Render elements sorted by zIndex
+    // Build text highlight map
     const highlightMap = new Map<string, { start: number; length: number; active?: boolean }[]>();
     if (findActive && findMode === 'canvas' && findQuery) {
       for (let index = 0; index < canvasFindResults.length; index++) {
         const result = canvasFindResults[index];
         const ranges = highlightMap.get(result.elementId) ?? [];
-        ranges.push({
-          start: result.charIndex,
-          length: findQuery.length,
-          active: index === findIdx,
-        });
+        ranges.push({ start: result.charIndex, length: findQuery.length, active: index === findIdx });
         highlightMap.set(result.elementId, ranges);
       }
     }
+
     const rc = rough.canvas(canvas);
     const sorted = [...elements].sort((a, b) => a.zIndex - b.zIndex);
     for (const element of sorted) {
       if (element.id === editingElementIdRef.current) continue;
-      renderElement(rc, ctx, element, { textHighlights: highlightMap.get(element.id) });
+      renderElement(rc, ctx, element, { textHighlights: highlightMap.get(element.id), isDark });
     }
 
-    // Render selection UI
+    // Connection point indicators when drawing arrows
+    if (isDrawingArrowRef.current && (activeTool === 'arrow' || activeTool === 'line')) {
+      renderConnectionPoints(ctx, elements, connectionSnapRef.current);
+    }
+
+    // Alignment guides during move
+    if (alignmentGuidesRef.current.length > 0) {
+      renderAlignmentGuides(ctx, alignmentGuidesRef.current, w / zoom, h / zoom);
+    }
+
+    // Selection UI
     const selectedElements = elements.filter((el) => selectedIds.includes(el.id));
     renderSelection(ctx, selectedElements);
 
-    // Render selection box
-    if (selectionBoxRef.current) {
-      renderSelectionBox(ctx, selectionBoxRef.current);
-    }
+    if (selectionBoxRef.current) renderSelectionBox(ctx, selectionBoxRef.current);
 
     ctx.restore();
-
     rafRef.current = requestAnimationFrame(render);
   }, [findActive, findMode, findQuery, canvasFindResults, findIdx]);
 
-  // ─── Setup / Teardown ─────────────────────────────────────────
+  // ─── Setup / Teardown ────────────────────────────────────────
   useEffect(() => {
     const canvas = canvasRef.current;
     const container = containerRef.current;
     if (!canvas || !container) return;
 
-    // Resize handler
     const resizeObserver = new ResizeObserver(() => {
       canvas.style.width = container.clientWidth + 'px';
       canvas.style.height = container.clientHeight + 'px';
     });
     resizeObserver.observe(container);
 
-    // Start render loop
     rafRef.current = requestAnimationFrame(render);
-
-    // Event listeners
     canvas.addEventListener('wheel', handleWheel, { passive: false });
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
@@ -461,7 +499,8 @@ export function Canvas() {
       window.removeEventListener('keydown', handleGlobalFindKeyDown);
     };
   }, [render, handleWheel, handleKeyDown, handleKeyUp, handleGlobalFindKeyDown]);
-  // ─── Save Current Text (synchronous) ───────────────────────────
+
+  // ─── Save Current Text ───────────────────────────────────────
   const saveCurrentText = useCallback(() => {
     const textarea = textInputRef.current;
     const position = textPositionRef.current;
@@ -485,7 +524,6 @@ export function Canvas() {
         fontSize,
         zIndex: useElementStore.getState().getMaxZIndex() + 1,
       });
-      // Measure text width/height
       const canvas = canvasRef.current;
       if (canvas) {
         const ctx = canvas.getContext('2d');
@@ -523,44 +561,56 @@ export function Canvas() {
     textContainerRef.current = null;
     isWrappedTextRef.current = false;
     interactionRef.current = { type: 'none' };
-    // Cleanup listeners
     (textarea as any).__cleanupBlur?.();
     (textarea as any).__cleanupKeydown?.();
   }, [saveSnapshot]);
-  // ─── Mouse Down ───────────────────────────────────────────────
+
+  // ─── Mouse Down ──────────────────────────────────────────────
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
-      // Right-click: always start pan; show context menu on mouseup only if mouse didn't move
       if (e.button === 2) {
         e.preventDefault();
         const canvasPoint = screenToCanvas(e.clientX, e.clientY);
         const { elements } = useElementStore.getState();
         const sortedDesc = [...elements].sort((a, b) => b.zIndex - a.zIndex);
-        const hitElement = sortedDesc.find((el) => hitTestElement(canvasPoint, el)) ?? null;
+        const hitElement = sortedDesc.find((el) => !el.locked && hitTestElement(canvasPoint, el)) ?? null;
         rightClickPendingRef.current = { startX: e.clientX, startY: e.clientY, hitElement };
         startRightClickPan(e.clientX, e.clientY);
         if (canvasRef.current) canvasRef.current.style.cursor = 'grabbing';
         return;
       }
 
-      if (e.button !== 0) return; // Left click only
-
-      // Close context menu on left click
+      if (e.button !== 0) return;
       if (contextMenu) setContextMenu(null);
-
-      // Save any active text input before starting new interaction
       saveCurrentText();
 
       const { activeTool, selectedIds, setSelectedIds, clearSelection, strokeColor, fillColor, strokeWidth, roughness, opacity, fontSize, strokeStyle, fillStyle, edgeRoundness } = useToolStore.getState();
 
-      // Hand tool: always pan
       if (activeTool === 'hand') {
         startRightClickPan(e.clientX, e.clientY);
         if (canvasRef.current) canvasRef.current.style.cursor = 'grabbing';
         return;
       }
 
-      // Ctrl+left-click: pan (same as right-click drag)
+      if (e.ctrlKey && activeTool === 'select') {
+        e.preventDefault();
+
+        // Ctrl+click on element with hyperlink → open URL
+        const canvasPoint = screenToCanvas(e.clientX, e.clientY);
+        const { elements } = useElementStore.getState();
+        const sortedDesc = [...elements].sort((a, b) => b.zIndex - a.zIndex);
+        const hitEl = sortedDesc.find((el) => !el.locked && hitTestElement(canvasPoint, el));
+        if (hitEl?.hyperlink) {
+          window.open(hitEl.hyperlink, '_blank', 'noopener,noreferrer');
+          return;
+        }
+
+        // Otherwise pan
+        startRightClickPan(e.clientX, e.clientY);
+        if (canvasRef.current) canvasRef.current.style.cursor = 'grabbing';
+        return;
+      }
+
       if (e.ctrlKey) {
         e.preventDefault();
         startRightClickPan(e.clientX, e.clientY);
@@ -568,14 +618,13 @@ export function Canvas() {
         return;
       }
 
-      // Pan takes priority (space+drag)
       if (startPan(e.clientX, e.clientY)) return;
 
       const canvasPoint = screenToCanvas(e.clientX, e.clientY);
       const { elements, addElement, getMaxZIndex } = useElementStore.getState();
 
       if (activeTool === 'select') {
-        // Check if clicking on an endpoint handle of a selected line/arrow element
+        // Check endpoint handles
         for (const id of selectedIds) {
           const el = elements.find((e) => e.id === id);
           if (el && (el.type === 'line' || el.type === 'arrow') && el.points) {
@@ -595,14 +644,13 @@ export function Canvas() {
           }
         }
 
-        // Check if clicking on a resize handle of selected element
+        // Check resize handles
         for (const id of selectedIds) {
           const el = elements.find((e) => e.id === id);
           if (el) {
             const handle = getResizeHandleAtPoint(canvasPoint, el);
             if (handle) {
               saveSnapshot();
-              // Get element bounds for point-based elements
               const bounds = getElementBounds(el);
               interactionRef.current = {
                 type: 'resizing',
@@ -627,30 +675,31 @@ export function Canvas() {
           }
         }
 
-        // Check if clicking on an element
-        // Iterate in reverse z-order to pick topmost
+        // Click on element
         const sortedDesc = [...elements].sort((a, b) => b.zIndex - a.zIndex);
-        const hitElement = sortedDesc.find((el) => hitTestElement(canvasPoint, el));
+        const hitElement = sortedDesc.find((el) => !el.locked && hitTestElement(canvasPoint, el));
 
         if (hitElement) {
-          if (e.shiftKey) {
-            // Toggle selection with shift
-            if (selectedIds.includes(hitElement.id)) {
-              setSelectedIds(selectedIds.filter((id) => id !== hitElement.id));
-            } else {
-              setSelectedIds([...selectedIds, hitElement.id]);
-            }
-          } else if (!selectedIds.includes(hitElement.id)) {
-            setSelectedIds([hitElement.id]);
+          // Group expansion: if this element belongs to a group, select all group members
+          let idsToSelect: string[];
+          if (hitElement.groupId && !e.shiftKey) {
+            idsToSelect = elements
+              .filter(el => el.groupId === hitElement.groupId)
+              .map(el => el.id);
+          } else if (e.shiftKey) {
+            idsToSelect = selectedIds.includes(hitElement.id)
+              ? selectedIds.filter((id) => id !== hitElement.id)
+              : [...selectedIds, hitElement.id];
+          } else {
+            idsToSelect = selectedIds.includes(hitElement.id) ? selectedIds : [hitElement.id];
           }
 
+          setSelectedIds(idsToSelect);
           saveSnapshot();
-          const currentSelected = e.shiftKey
-            ? useToolStore.getState().selectedIds
-            : (selectedIds.includes(hitElement.id) ? selectedIds : [hitElement.id]);
+
+          const currentSelected = idsToSelect;
 
           if (e.altKey) {
-            // Alt+drag: duplicate selected elements at same position and drag the copies
             const { duplicateElements } = useElementStore.getState();
             const duplicated = duplicateElements(currentSelected, 0, 0);
             const newIds = duplicated.map((d) => d.id);
@@ -659,41 +708,39 @@ export function Canvas() {
             for (const dup of duplicated) {
               originals.set(dup.id, { x: dup.x, y: dup.y });
             }
-            interactionRef.current = {
-              type: 'moving',
-              startX: canvasPoint.x,
-              startY: canvasPoint.y,
-              originals,
-            };
+            interactionRef.current = { type: 'moving', startX: canvasPoint.x, startY: canvasPoint.y, originals };
           } else {
-            // Normal move
             const originals = new Map<string, { x: number; y: number }>();
+            const finalElements = useElementStore.getState().elements;
             for (const id of currentSelected) {
-              const el = elements.find((e) => e.id === id);
+              const el = finalElements.find((e) => e.id === id);
               if (el) originals.set(id, { x: el.x, y: el.y });
             }
-            interactionRef.current = {
-              type: 'moving',
-              startX: canvasPoint.x,
-              startY: canvasPoint.y,
-              originals,
-            };
+            // If any selected element is a frame, also add its contained elements to originals
+            for (const id of currentSelected) {
+              const el = finalElements.find((e) => e.id === id);
+              if (el && el.type === 'frame') {
+                const frameBounds = getElementBounds(el);
+                const contained = finalElements.filter(other =>
+                  !currentSelected.includes(other.id) &&
+                  !other.locked &&
+                  boundsContainedIn(getElementBounds(other), frameBounds)
+                );
+                for (const c of contained) {
+                  if (!originals.has(c.id)) originals.set(c.id, { x: c.x, y: c.y });
+                }
+              }
+            }
+            interactionRef.current = { type: 'moving', startX: canvasPoint.x, startY: canvasPoint.y, originals };
           }
         } else {
-          // Start selection box
           if (!e.shiftKey) clearSelection();
-          interactionRef.current = {
-            type: 'selecting',
-            startX: canvasPoint.x,
-            startY: canvasPoint.y,
-          };
+          interactionRef.current = { type: 'selecting', startX: canvasPoint.x, startY: canvasPoint.y };
         }
       } else if (activeTool === 'text') {
-        // Prevent canvas from stealing focus from the textarea
         e.preventDefault();
-        // If clicking on an existing text element, open it for editing
         const sortedDescText = [...elements].sort((a, b) => b.zIndex - a.zIndex);
-        const hitText = sortedDescText.find((el) => el.type === 'text' && hitTestElement(canvasPoint, el));
+        const hitText = sortedDescText.find((el) => el.type === 'text' && !el.locked && hitTestElement(canvasPoint, el));
         interactionRef.current = { type: 'text-input' };
         if (hitText) {
           showTextInputForEdit(hitText, canvasPoint);
@@ -707,6 +754,18 @@ export function Canvas() {
         const drawPoint = activeTool === 'freehand' ? canvasPoint : snapPoint(canvasPoint, snap);
         const newZ = getMaxZIndex() + 1;
         const isLinear = activeTool === 'line' || activeTool === 'arrow' || activeTool === 'freehand';
+
+        // Smart connector: check if starting on a connection point
+        let startBinding = undefined;
+        if (activeTool === 'arrow' || activeTool === 'line') {
+          const snap2 = findNearestConnectionPoint(canvasPoint, elements, [], CONNECTOR_SNAP_DISTANCE);
+          if (snap2) {
+            startBinding = { elementId: snap2.elementId, point: snap2.point };
+            drawPoint.x = snap2.x;
+            drawPoint.y = snap2.y;
+          }
+          isDrawingArrowRef.current = true;
+        }
 
         const newElement = createElement({
           type: activeTool as import('../../types').ElementType,
@@ -725,6 +784,10 @@ export function Canvas() {
           points: isLinear ? [{ x: 0, y: 0 }] : undefined,
         });
 
+        if (startBinding) {
+          (newElement as any).startBinding = startBinding;
+        }
+
         addElement(newElement);
         interactionRef.current = { type: 'drawing', element: newElement };
       }
@@ -732,7 +795,7 @@ export function Canvas() {
     [startPan, startRightClickPan, screenToCanvas, saveSnapshot, saveCurrentText, contextMenu],
   );
 
-  // ─── Mouse Move ───────────────────────────────────────────────
+  // ─── Mouse Move ──────────────────────────────────────────────
   const handleMouseMove = useCallback(
     (e: React.MouseEvent) => {
       if (movePan(e.clientX, e.clientY)) return;
@@ -741,25 +804,27 @@ export function Canvas() {
       const snap = useCanvasStore.getState().snapToGrid;
       const canvasPoint = rawCanvasPoint;
       const interaction = interactionRef.current;
-      const { updateElement } = useElementStore.getState();
+      const { updateElement, updateConnectorBindings } = useElementStore.getState();
 
       if (interaction.type === 'drawing') {
         const el = interaction.element;
         const snappedPoint = snapPoint(rawCanvasPoint, snap);
+
         if (el.type === 'freehand') {
-          // Add point to freehand path (no snapping for freehand)
-          const elements = useElementStore.getState().elements;
-          const current = elements.find((e) => e.id === el.id);
+          const current = useElementStore.getState().elements.find((e) => e.id === el.id);
           if (current) {
             const newPoint = { x: rawCanvasPoint.x - el.x, y: rawCanvasPoint.y - el.y };
             updateElement(el.id, { points: [...(current.points ?? []), newPoint] });
           }
         } else if (el.type === 'line' || el.type === 'arrow') {
-          // Update end point
-          const endPoint = { x: snappedPoint.x - el.x, y: snappedPoint.y - el.y };
+          // Check for connection point snap at end
+          const { elements } = useElementStore.getState();
+          const snap2 = findNearestConnectionPoint(rawCanvasPoint, elements, [el.id], CONNECTOR_SNAP_DISTANCE);
+          connectionSnapRef.current = snap2;
+          const targetPt = snap2 ? { x: snap2.x, y: snap2.y } : snappedPoint;
+          const endPoint = { x: targetPt.x - el.x, y: targetPt.y - el.y };
           updateElement(el.id, { points: [{ x: 0, y: 0 }, endPoint] });
         } else {
-          // Update width/height for shapes
           updateElement(el.id, {
             width: snappedPoint.x - el.x,
             height: snappedPoint.y - el.y,
@@ -768,9 +833,42 @@ export function Canvas() {
       } else if (interaction.type === 'moving') {
         const dx = rawCanvasPoint.x - interaction.startX;
         const dy = rawCanvasPoint.y - interaction.startY;
+        const { elements } = useElementStore.getState();
+
+        // Compute alignment guides against non-moving elements
+        const movingIds = new Set(interaction.originals.keys());
+        const staticElements = elements.filter(el => !movingIds.has(el.id) && !el.locked);
+        const movingBounds = [...interaction.originals.entries()].map(([id, orig]) => {
+          const el = elements.find(e => e.id === id);
+          if (!el) return { x: orig.x + dx, y: orig.y + dy, width: el?.width ?? 0, height: el?.height ?? 0 };
+          const b = getElementBounds(el);
+          return { x: b.x - el.x + orig.x + dx, y: b.y - el.y + orig.y + dy, width: b.width, height: b.height };
+        });
+
+        let finalDx = dx;
+        let finalDy = dy;
+        alignmentGuidesRef.current = [];
+
+        if (!snap && staticElements.length > 0) {
+          const { guides, snapDx, snapDy } = computeAlignmentGuides(movingBounds, staticElements, ALIGNMENT_SNAP_THRESHOLD);
+          alignmentGuidesRef.current = guides;
+          if (Math.abs(snapDx) < ALIGNMENT_SNAP_THRESHOLD) finalDx = dx + snapDx;
+          if (Math.abs(snapDy) < ALIGNMENT_SNAP_THRESHOLD) finalDy = dy + snapDy;
+        }
+
+        const movedShapeIds: string[] = [];
         for (const [id, orig] of interaction.originals) {
-          const newPos = snapPoint({ x: orig.x + dx, y: orig.y + dy }, snap);
+          const newPos = snap ? snapPoint({ x: orig.x + finalDx, y: orig.y + finalDy }, snap) : { x: orig.x + finalDx, y: orig.y + finalDy };
           updateElement(id, { x: newPos.x, y: newPos.y });
+          const el = elements.find(e => e.id === id);
+          if (el && el.type !== 'arrow' && el.type !== 'line' && el.type !== 'freehand') {
+            movedShapeIds.push(id);
+          }
+        }
+
+        // Update any arrows bound to the moved shapes
+        if (movedShapeIds.length > 0) {
+          updateConnectorBindings(movedShapeIds);
         }
       } else if (interaction.type === 'resizing') {
         const { elementId, handle, startX, startY, original, elementType } = interaction;
@@ -778,17 +876,13 @@ export function Canvas() {
         const dy = canvasPoint.y - startY;
 
         let { x, y, width, height } = original;
-
-        // Apply resize based on handle
         if (handle.includes('e')) { width += dx; }
         if (handle.includes('w')) { x += dx; width -= dx; }
         if (handle.includes('s')) { height += dy; }
         if (handle.includes('n')) { y += dy; height -= dy; }
 
-        // For text elements, handle resize
         if (elementType === 'text' && original.fontSize) {
           if (original.textWrap && original.text) {
-            // Wrapped text: fix width, recalculate height from wrapped lines
             const constrainedWidth = Math.max(20, width);
             const canvas = canvasRef.current;
             if (canvas) {
@@ -796,82 +890,83 @@ export function Canvas() {
               if (ctx) {
                 ctx.font = `${original.fontSize}px 'Virgil', 'Segoe Print', 'Comic Sans MS', cursive`;
                 const wrappedLines = wrapTextToLines(original.text, constrainedWidth, ctx);
-                const newHeight = wrappedLines.length * Math.round(original.fontSize * 1.3);
-                updateElement(elementId, { x, y, width: constrainedWidth, height: newHeight });
+                updateElement(elementId, { x, y, width: constrainedWidth, height: wrappedLines.length * Math.round(original.fontSize * 1.3) });
               } else {
                 updateElement(elementId, { x, y, width: Math.max(20, width), height });
               }
             }
           } else {
-            // Non-wrapped text: scale fontSize proportionally
             const scaleX = original.width > 0 ? width / original.width : 1;
             const scaleY = original.height > 0 ? height / original.height : 1;
             const scale = Math.max(0.1, Math.min(scaleX, scaleY));
-            const newFontSize = Math.round(original.fontSize * scale);
-            updateElement(elementId, { x, y, width, height, fontSize: Math.max(8, Math.min(200, newFontSize)) });
+            updateElement(elementId, { x, y, width, height, fontSize: Math.max(8, Math.min(200, Math.round(original.fontSize * scale))) });
           }
         } else if ((elementType === 'line' || elementType === 'arrow' || elementType === 'freehand') && original.points) {
-          // For point-based elements, scale points proportionally
           const scaleX = original.width > 0 ? Math.abs(width) / original.width : 1;
           const scaleY = original.height > 0 ? Math.abs(height) / original.height : 1;
-          
-          // Find the bounds of original points to calculate proper offset
           const origMinX = Math.min(...original.points.map(p => p.x));
           const origMinY = Math.min(...original.points.map(p => p.y));
-          
-          // Scale points relative to their bounding box origin
           const scaledPoints = original.points.map(p => ({
             x: (p.x - origMinX) * scaleX + (width < 0 ? Math.abs(width) : 0),
             y: (p.y - origMinY) * scaleY + (height < 0 ? Math.abs(height) : 0),
           }));
-          
-          // Update element position (to new bounding box origin) and scaled points
           updateElement(elementId, { x, y, points: scaledPoints });
         } else {
           updateElement(elementId, { x, y, width, height });
         }
+
+        // Update bindings when resizing a shape
+        updateConnectorBindings([elementId]);
       } else if (interaction.type === 'editing-point') {
         const { elementId, pointIndex, originalX, originalY, originalPoints } = interaction;
         const snapped = snapPoint(rawCanvasPoint, snap);
-        // Optional: shift-key constrains to 0/45/90 degrees relative to the other endpoint (for 2-point lines/arrows)
         let targetX = snapped.x;
         let targetY = snapped.y;
         if (e.shiftKey && originalPoints.length === 2) {
           const otherIdx = pointIndex === 0 ? 1 : 0;
           const anchorX = originalPoints[otherIdx].x + originalX;
           const anchorY = originalPoints[otherIdx].y + originalY;
-          const dx = targetX - anchorX;
-          const dy = targetY - anchorY;
-          const angle = Math.atan2(dy, dx);
-          const step = Math.PI / 4; // 45 degrees
-          const snappedAngle = Math.round(angle / step) * step;
-          const len = Math.hypot(dx, dy);
+          const ddx = targetX - anchorX;
+          const ddy = targetY - anchorY;
+          const angle = Math.atan2(ddy, ddx);
+          const snappedAngle = Math.round(angle / (Math.PI / 4)) * (Math.PI / 4);
+          const len = Math.hypot(ddx, ddy);
           targetX = anchorX + Math.cos(snappedAngle) * len;
           targetY = anchorY + Math.sin(snappedAngle) * len;
         }
+
+        // Check for connection point snap when editing endpoint
+        const { elements } = useElementStore.getState();
+        const el = elements.find(e => e.id === elementId);
+        if (el) {
+          const snap2 = findNearestConnectionPoint({ x: targetX, y: targetY }, elements, [elementId], CONNECTOR_SNAP_DISTANCE);
+          if (snap2) {
+            targetX = snap2.x;
+            targetY = snap2.y;
+            connectionSnapRef.current = snap2;
+          } else {
+            connectionSnapRef.current = null;
+          }
+        }
+
         const newPoints = originalPoints.map((p) => ({ ...p }));
         newPoints[pointIndex] = { x: targetX - originalX, y: targetY - originalY };
         updateElement(elementId, { points: newPoints });
       } else if (interaction.type === 'selecting') {
         const { startX, startY } = interaction;
-        selectionBoxRef.current = normalizeBounds(
-          startX, startY,
-          canvasPoint.x - startX,
-          canvasPoint.y - startY,
-        );
+        selectionBoxRef.current = normalizeBounds(startX, startY, canvasPoint.x - startX, canvasPoint.y - startY);
       }
 
-      // Update cursor
       updateCursor(canvasPoint, e);
     },
     [movePan, screenToCanvas],
   );
 
-  // ─── Mouse Up ─────────────────────────────────────────────────
+  // ─── Mouse Up ────────────────────────────────────────────────
   const handleMouseUp = useCallback((e?: React.MouseEvent) => {
     endPan();
+    alignmentGuidesRef.current = [];
 
-    // Right-click: show context menu only if mouse barely moved (was a click, not a drag)
     if (rightClickPendingRef.current) {
       const { startX, startY, hitElement } = rightClickPendingRef.current;
       rightClickPendingRef.current = null;
@@ -892,9 +987,17 @@ export function Canvas() {
     const interaction = interactionRef.current;
 
     if (interaction.type === 'drawing') {
-      // Normalize negative dimensions for shapes
       const el = interaction.element;
-      if (el.type === 'rectangle' || el.type === 'ellipse' || el.type === 'diamond') {
+
+      // Set endBinding if snapped to connection point
+      if ((el.type === 'arrow' || el.type === 'line') && connectionSnapRef.current) {
+        useElementStore.getState().updateElement(el.id, {
+          endBinding: { elementId: connectionSnapRef.current.elementId, point: connectionSnapRef.current.point },
+        });
+        connectionSnapRef.current = null;
+      }
+
+      if (el.type === 'rectangle' || el.type === 'ellipse' || el.type === 'diamond' || el.type === 'frame') {
         const { elements } = useElementStore.getState();
         const current = elements.find((e) => e.id === el.id);
         if (current) {
@@ -902,16 +1005,24 @@ export function Canvas() {
           useElementStore.getState().updateElement(el.id, normalized);
         }
       }
-      // Switch back to select after drawing (unless lock mode)
+
+      isDrawingArrowRef.current = false;
       const { lockToolMode } = useToolStore.getState();
-      if (!lockToolMode) {
-        useToolStore.getState().setActiveTool('select');
+      if (!lockToolMode) useToolStore.getState().setActiveTool('select');
+    } else if (interaction.type === 'editing-point') {
+      // Set binding when editing arrow endpoint
+      const { elementId, pointIndex } = interaction;
+      if (connectionSnapRef.current) {
+        const bindingKey = pointIndex === 0 ? 'startBinding' : 'endBinding';
+        useElementStore.getState().updateElement(elementId, {
+          [bindingKey]: { elementId: connectionSnapRef.current.elementId, point: connectionSnapRef.current.point },
+        });
+        connectionSnapRef.current = null;
       }
     } else if (interaction.type === 'resizing' && interaction.elementType === 'text') {
-      // Recalculate text dimensions based on new fontSize
       const { elements } = useElementStore.getState();
       const current = elements.find((e) => e.id === interaction.elementId);
-      if (current && current.text) {
+      if (current?.text) {
         const canvas = canvasRef.current;
         if (canvas) {
           const ctx = canvas.getContext('2d');
@@ -920,17 +1031,18 @@ export function Canvas() {
             ctx.font = `${fontSize}px 'Virgil', 'Segoe Print', 'Comic Sans MS', cursive`;
             const lines = current.text.split('\n');
             const maxWidth = Math.max(...lines.map((l) => ctx.measureText(l).width));
-            const height = lines.length * Math.round(fontSize * 1.3);
-            useElementStore.getState().updateElement(interaction.elementId, { width: maxWidth, height });
+            useElementStore.getState().updateElement(interaction.elementId, {
+              width: maxWidth,
+              height: lines.length * Math.round(fontSize * 1.3),
+            });
           }
         }
       }
     } else if (interaction.type === 'selecting' && selectionBoxRef.current) {
-      // Select all elements inside selection box
       const box = selectionBoxRef.current;
       const { elements } = useElementStore.getState();
       const selectedIds = elements
-        .filter((el) => boundsOverlap(box, getElementBounds(el)))
+        .filter((el) => !el.locked && boundsOverlap(box, getElementBounds(el)))
         .map((el) => el.id);
       useToolStore.getState().setSelectedIds(selectedIds);
       selectionBoxRef.current = null;
@@ -939,11 +1051,10 @@ export function Canvas() {
     interactionRef.current = { type: 'none' };
   }, [endPan]);
 
-  // ─── Cursor Management ────────────────────────────────────────
+  // ─── Cursor Management ───────────────────────────────────────
   const updateCursor = useCallback((canvasPoint: Point, _e: React.MouseEvent) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-
     const { activeTool, selectedIds } = useToolStore.getState();
     const { isPanning } = useCanvasStore.getState();
 
@@ -951,29 +1062,23 @@ export function Canvas() {
       canvas.style.cursor = isPanning ? 'grabbing' : 'grab';
       return;
     }
-
     if (activeTool === 'text') {
       const { elements: textElements } = useElementStore.getState();
-      const sortedDescText = [...textElements].sort((a, b) => b.zIndex - a.zIndex);
-      const hoveredText = sortedDescText.find((el) => el.type === 'text' && hitTestElement(canvasPoint, el));
-      canvas.style.cursor = hoveredText ? 'text' : 'crosshair';
+      const hovered = [...textElements].sort((a, b) => b.zIndex - a.zIndex).find((el) => el.type === 'text' && hitTestElement(canvasPoint, el));
+      canvas.style.cursor = hovered ? 'text' : 'crosshair';
       return;
     }
-
     if (activeTool !== 'select') {
       canvas.style.cursor = 'crosshair';
       return;
     }
 
-    // Check resize handles
     const { elements } = useElementStore.getState();
     for (const id of selectedIds) {
       const el = elements.find((e) => e.id === id);
       if (el) {
-        // Endpoint handles for line/arrow take priority
         if ((el.type === 'line' || el.type === 'arrow') && el.points) {
-          const pointIdx = getEndpointHandleAtPoint(canvasPoint, el);
-          if (pointIdx !== null) {
+          if (getEndpointHandleAtPoint(canvasPoint, el) !== null) {
             canvas.style.cursor = 'grab';
             return;
           }
@@ -981,10 +1086,8 @@ export function Canvas() {
         const handle = getResizeHandleAtPoint(canvasPoint, el);
         if (handle) {
           const cursorMap: Record<ResizeHandle, string> = {
-            nw: 'nwse-resize', ne: 'nesw-resize',
-            sw: 'nesw-resize', se: 'nwse-resize',
-            n: 'ns-resize', s: 'ns-resize',
-            e: 'ew-resize', w: 'ew-resize',
+            nw: 'nwse-resize', ne: 'nesw-resize', sw: 'nesw-resize', se: 'nwse-resize',
+            n: 'ns-resize', s: 'ns-resize', e: 'ew-resize', w: 'ew-resize',
           };
           canvas.style.cursor = cursorMap[handle];
           return;
@@ -992,13 +1095,19 @@ export function Canvas() {
       }
     }
 
-    // Check hover
     const sortedDesc = [...elements].sort((a, b) => b.zIndex - a.zIndex);
-    const hovered = sortedDesc.find((el) => hitTestElement(canvasPoint, el));
+    const hovered = sortedDesc.find((el) => !el.locked && hitTestElement(canvasPoint, el));
+
+    // Show pointer cursor on elements with hyperlinks in select mode
+    if (hovered?.hyperlink) {
+      canvas.style.cursor = 'pointer';
+      return;
+    }
+
     canvas.style.cursor = hovered ? 'move' : 'default';
   }, [isSpacePressed]);
 
-  // ─── Edit existing text element ───────────────────────────────
+  // ─── Edit existing text element ──────────────────────────────
   const showTextInputForEdit = useCallback((element: CanvasElement, clickPoint?: Point) => {
     const { offsetX, offsetY, zoom } = useCanvasStore.getState();
     const textarea = textInputRef.current;
@@ -1012,8 +1121,8 @@ export function Canvas() {
       : "'Virgil', 'Segoe Print', 'Comic Sans MS', cursive";
     const editFontSize = element.fontSize ?? (isCode ? 14 : 40);
     const editLineHeight = isCode ? 1.5 : 1.3;
-
     const codePad = Math.round(16 * zoom);
+
     isWrappedTextRef.current = element.textWrap ?? false;
 
     textarea.style.display = 'block';
@@ -1044,56 +1153,47 @@ export function Canvas() {
       textarea.style.boxSizing = 'border-box';
       textarea.style.textShadow = 'none';
     }
-      textarea.value = element.text ?? '';
-      textarea.focus();
-      setIsCodeEdit(isCode);
-      const lang = element.codeLanguage ?? 'code';
-      setCodeLanguage(lang);
-      // Always build the overlay immediately — updateEditorOverlay uses stale isCodeEdit state
-      if (isCode) {
-        setEditorOverlayHtml(buildCodeHighlightHtml(element.text ?? '', lang, findActive && findQuery ? findQuery : ''));
-      } else if (findActive && findQuery) {
-        updateEditorOverlay(findQuery);
-      }
 
-      if (clickPoint) {
-        const text = element.text ?? '';
-        const lineHeight = editFontSize * editLineHeight;
-        const relY = clickPoint.y - element.y - (isCode ? 16 : 0);
-        const lineIndex = Math.max(0, Math.floor(relY / lineHeight));
-        const lines = text.split('\n');
+    textarea.value = element.text ?? '';
+    textarea.focus();
+    setIsCodeEdit(isCode);
+    const lang = element.codeLanguage ?? 'code';
+    setCodeLanguage(lang);
+    if (isCode) {
+      setEditorOverlayHtml(buildCodeHighlightHtml(element.text ?? '', lang, findActive && findQuery ? findQuery : ''));
+    } else if (findActive && findQuery) {
+      updateEditorOverlay(findQuery);
+    }
 
-        let charPos = 0;
-        for (let i = 0; i < Math.min(lineIndex, lines.length); i++) {
-          charPos += lines[i].length + 1;
-        }
-
-        if (lineIndex < lines.length) {
-          const canvas = canvasRef.current;
-          if (canvas) {
-            const ctx = canvas.getContext('2d');
-            if (ctx) {
-              ctx.font = `${editFontSize}px ${fontFamily}`;
-              const relX = clickPoint.x - element.x - (isCode ? 16 : 0);
-              const line = lines[lineIndex];
-              // Find character position by measuring text width
-              for (let i = 0; i <= line.length; i++) {
-                const w = ctx.measureText(line.substring(0, i)).width;
-                if (w >= relX) {
-                  charPos += Math.max(0, i - 1);
-                  break;
-                }
-                if (i === line.length) charPos += line.length;
-              }
+    if (clickPoint) {
+      const text = element.text ?? '';
+      const lineHeight = editFontSize * editLineHeight;
+      const relY = clickPoint.y - element.y - (isCode ? 16 : 0);
+      const lineIndex = Math.max(0, Math.floor(relY / lineHeight));
+      const lines = text.split('\n');
+      let charPos = 0;
+      for (let i = 0; i < Math.min(lineIndex, lines.length); i++) charPos += lines[i].length + 1;
+      if (lineIndex < lines.length) {
+        const canvas = canvasRef.current;
+        if (canvas) {
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.font = `${editFontSize}px ${fontFamily}`;
+            const relX = clickPoint.x - element.x - (isCode ? 16 : 0);
+            const line = lines[lineIndex];
+            for (let i = 0; i <= line.length; i++) {
+              const w = ctx.measureText(line.substring(0, i)).width;
+              if (w >= relX) { charPos += Math.max(0, i - 1); break; }
+              if (i === line.length) charPos += line.length;
             }
           }
         }
-        textarea.setSelectionRange(charPos, charPos);
-      } else {
-        textarea.select();
       }
+      textarea.setSelectionRange(charPos, charPos);
+    } else {
+      textarea.select();
+    }
 
-    // Cleanup previous listeners
     (textarea as any).__cleanupBlur?.();
     (textarea as any).__cleanupKeydown?.();
 
@@ -1110,7 +1210,7 @@ export function Canvas() {
               ctx.font = `${editFontSize}px ${fontFamily}`;
               const lines = text.split('\n');
               const maxWidth = Math.max(...lines.map((l) => ctx.measureText(l).width));
-              updates.width = maxWidth + 32; // CODE_PADDING * 2
+              updates.width = maxWidth + 32;
               updates.height = lines.length * Math.round(editFontSize * 1.5) + 32;
             } else if (element.textWrap) {
               ctx.font = `${element.fontSize ?? 40}px 'Virgil', 'Segoe Print', 'Comic Sans MS', cursive`;
@@ -1135,7 +1235,6 @@ export function Canvas() {
       textarea.style.display = 'none';
       textarea.style.width = '';
       textarea.style.height = '';
-      // Reset code-specific styles
       if (isCode) {
         textarea.style.background = 'transparent';
         textarea.style.borderRadius = '';
@@ -1154,69 +1253,84 @@ export function Canvas() {
       interactionRef.current = { type: 'none' };
       setIsCodeEdit(false);
       setEditorOverlayHtml('');
-      // Reset find bar state
       findBarActiveRef.current = false;
       setFindActive(false);
       setFindQuery('');
       setFindMatches([]);
       setFindIdx(0);
-      // Cleanup listeners
       (textarea as any).__cleanupBlur?.();
       (textarea as any).__cleanupKeydown?.();
     };
 
     const handleBlur = (e: FocusEvent) => {
-      // Don't close the editor if focus moved into the find bar
       const related = e.relatedTarget as HTMLElement | null;
       if (related?.closest?.('[data-find-bar]')) return;
       finishEdit();
     };
     textarea.addEventListener('blur', handleBlur);
-    (textarea as any).__cleanupBlur = () => {
-      textarea.removeEventListener('blur', handleBlur);
-    };
+    (textarea as any).__cleanupBlur = () => textarea.removeEventListener('blur', handleBlur);
 
     const handleEditKeydown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        textarea.blur();
-        useToolStore.getState().clearSelection();
-      } else if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
-        // Open in-element find bar
-        e.preventDefault();
-        e.stopPropagation();
-        openFindBar();
-      }
+      if (e.key === 'Escape') { textarea.blur(); useToolStore.getState().clearSelection(); }
+      else if ((e.ctrlKey || e.metaKey) && e.key === 'f') { e.preventDefault(); e.stopPropagation(); openFindBar(); }
     };
     textarea.addEventListener('keydown', handleEditKeydown);
-    (textarea as any).__cleanupKeydown = () => {
-      textarea.removeEventListener('keydown', handleEditKeydown);
-    };
-  }, [saveSnapshot, openFindBar]);
+    (textarea as any).__cleanupKeydown = () => textarea.removeEventListener('keydown', handleEditKeydown);
+  }, [saveSnapshot, openFindBar, buildCodeHighlightHtml, findActive, findQuery, updateEditorOverlay]);
 
-  // ─── Double-Click (edit existing text) ─────────────────────────
+  // ─── Double-Click ────────────────────────────────────────────
   const handleDoubleClick = useCallback(
     (e: React.MouseEvent) => {
       const canvasPoint = screenToCanvas(e.clientX, e.clientY);
       const { elements } = useElementStore.getState();
       const sortedDesc = [...elements].sort((a, b) => b.zIndex - a.zIndex);
-      const hitElement = sortedDesc.find((el) => el.type === 'text' && hitTestElement(canvasPoint, el));
-      if (hitElement) {
+
+      // Text element → edit
+      const hitText = sortedDesc.find((el) => el.type === 'text' && !el.locked && hitTestElement(canvasPoint, el));
+      if (hitText) {
         e.preventDefault();
         interactionRef.current = { type: 'text-input' };
-        showTextInputForEdit(hitElement, canvasPoint);
+        showTextInputForEdit(hitText, canvasPoint);
+        return;
+      }
+
+      // Arrow/Line → edit connector label
+      const hitArrow = sortedDesc.find((el) => (el.type === 'arrow' || el.type === 'line') && hitTestElement(canvasPoint, el));
+      if (hitArrow) {
+        e.preventDefault();
+        const screen = canvasToScreen(
+          hitArrow.x + (hitArrow.points ? hitArrow.points[1].x / 2 : 0),
+          hitArrow.y + (hitArrow.points ? hitArrow.points[1].y / 2 : 0),
+        );
+        setConnectorLabelEdit({
+          elementId: hitArrow.id,
+          screenX: screen.x,
+          screenY: screen.y,
+          value: hitArrow.connectorLabel ?? '',
+        });
+        return;
+      }
+
+      // Frame → rename
+      const hitFrame = sortedDesc.find((el) => el.type === 'frame' && hitTestElement(canvasPoint, el));
+      if (hitFrame) {
+        e.preventDefault();
+        const newName = window.prompt('Frame name:', hitFrame.frameName ?? 'Frame');
+        if (newName !== null) {
+          useElementStore.getState().updateElement(hitFrame.id, { frameName: newName || 'Frame' });
+        }
       }
     },
-    [screenToCanvas, showTextInputForEdit],
+    [screenToCanvas, canvasToScreen, showTextInputForEdit],
   );
 
-  // ─── Text Input ───────────────────────────────────────────────
+  // ─── Text Input ──────────────────────────────────────────────
   const showTextInput = useCallback((canvasPoint: Point) => {
     const { offsetX, offsetY, zoom } = useCanvasStore.getState();
     const { fontSize: currentFontSize } = useToolStore.getState();
     const textarea = textInputRef.current;
     if (!textarea) return;
 
-    // Detect if click is inside a rectangle — use topmost one
     const { elements } = useElementStore.getState();
     const rectContainer = [...elements]
       .filter(el => el.type === 'rectangle')
@@ -1228,8 +1342,6 @@ export function Canvas() {
 
     textContainerRef.current = rectContainer;
     isWrappedTextRef.current = rectContainer !== null;
-
-    // Store position for later save
     textPositionRef.current = canvasPoint;
 
     textarea.style.display = 'block';
@@ -1255,9 +1367,7 @@ export function Canvas() {
     }
 
     textarea.focus();
-    if (findActive && findQuery) {
-      updateEditorOverlay(findQuery);
-    }
+    if (findActive && findQuery) updateEditorOverlay(findQuery);
 
     const finishText = () => {
       const position = textPositionRef.current;
@@ -1286,7 +1396,6 @@ export function Canvas() {
           fontSize,
           zIndex: useElementStore.getState().getMaxZIndex() + 1,
         });
-        // Measure text width/height
         const canvas = canvasRef.current;
         if (canvas) {
           const ctx = canvas.getContext('2d');
@@ -1298,13 +1407,9 @@ export function Canvas() {
               newElement.width = wrapWidth;
               newElement.height = wrappedLines.length * Math.round(fontSize * 1.3);
               newElement.textWrap = true;
-              // Expand container if text overflows vertically
               const textBottom = position.y + newElement.height + TEXT_WRAP_PADDING;
-              const rectBottom = container.y + container.height;
-              if (textBottom > rectBottom) {
-                useElementStore.getState().updateElement(container.id, {
-                  height: textBottom - container.y + TEXT_WRAP_PADDING,
-                });
+              if (textBottom > container.y + container.height) {
+                useElementStore.getState().updateElement(container.id, { height: textBottom - container.y + TEXT_WRAP_PADDING });
               }
             } else {
               const lines = text.split('\n');
@@ -1315,11 +1420,8 @@ export function Canvas() {
           }
         }
         useElementStore.getState().addElement(newElement);
-        // Switch back to select after text (unless lock mode)
         const { lockToolMode } = useToolStore.getState();
-        if (!lockToolMode) {
-          useToolStore.getState().setActiveTool('select');
-        }
+        if (!lockToolMode) useToolStore.getState().setActiveTool('select');
       }
       textarea.style.display = 'none';
       textarea.value = '';
@@ -1334,27 +1436,18 @@ export function Canvas() {
       (textarea as any).__cleanupKeydown?.();
     };
 
-    // Clean up previous listeners before adding new ones
     (textarea as any).__cleanupBlur?.();
     (textarea as any).__cleanupKeydown?.();
 
     textarea.addEventListener('blur', finishText);
-    (textarea as any).__cleanupBlur = () => {
-      textarea.removeEventListener('blur', finishText);
-    };
+    (textarea as any).__cleanupBlur = () => textarea.removeEventListener('blur', finishText);
 
     const handleTextKeydown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        textarea.blur(); // Save text and close
-        useToolStore.getState().clearSelection();
-      }
-      // Allow Enter for newlines, just blur to confirm
+      if (e.key === 'Escape') { textarea.blur(); useToolStore.getState().clearSelection(); }
     };
     textarea.addEventListener('keydown', handleTextKeydown);
-    (textarea as any).__cleanupKeydown = () => {
-      textarea.removeEventListener('keydown', handleTextKeydown);
-    };
-  }, [saveSnapshot]);
+    (textarea as any).__cleanupKeydown = () => textarea.removeEventListener('keydown', handleTextKeydown);
+  }, [saveSnapshot, findActive, findQuery, updateEditorOverlay]);
 
   const { theme } = useCanvasStore();
   const isEmpty = useElementStore((s) => s.elements.length === 0);
@@ -1364,7 +1457,6 @@ export function Canvas() {
       ref={containerRef}
       className={`w-full h-full relative overflow-hidden ${theme === 'dark' ? 'dark' : ''}`}
     >
-      {/* Empty state hint */}
       {isEmpty && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none z-10">
           <div className="text-center text-gray-400 dark:text-gray-500 select-none">
@@ -1377,6 +1469,7 @@ export function Canvas() {
           </div>
         </div>
       )}
+
       <canvas
         ref={canvasRef}
         className="w-full h-full block"
@@ -1387,6 +1480,7 @@ export function Canvas() {
         onDoubleClick={handleDoubleClick}
         onContextMenu={(e) => e.preventDefault()}
       />
+
       {findActive && (
         <FindBar
           query={findQuery}
@@ -1398,6 +1492,7 @@ export function Canvas() {
           onClose={closeFindBar}
         />
       )}
+
       {(isCodeEdit || editorOverlayHtml) && (
         <div
           className="absolute pointer-events-none overflow-hidden rounded-lg"
@@ -1432,28 +1527,20 @@ export function Canvas() {
           />
         </div>
       )}
+
       <textarea
         ref={textInputRef}
         className="absolute hidden p-0 m-0 border-none outline-none bg-transparent resize-none"
-        style={{
-          fontFamily: "'Virgil', 'Segoe Print', 'Comic Sans MS', cursive",
-          minWidth: '20px',
-          minHeight: '1.5em',
-          lineHeight: 1.3,
-        }}
+        style={{ fontFamily: "'Virgil', 'Segoe Print', 'Comic Sans MS', cursive", minWidth: '20px', minHeight: '1.5em', lineHeight: 1.3 }}
         onInput={(e) => {
           const ta = e.currentTarget;
           const isCodeEditLocal = isCodeEdit;
           const fontFamily = ta.style.fontFamily;
           const currentZoom = useCanvasStore.getState().zoom;
           const padding = isCodeEditLocal ? Math.round(32 * currentZoom) : 0;
-          
-          // Auto-grow height
           ta.style.height = 'auto';
           ta.style.height = ta.scrollHeight + 'px';
-
           if (!isWrappedTextRef.current) {
-            // Auto-grow width based on content (non-wrapped only)
             const lines = ta.value.split('\n');
             const canvas = canvasRef.current;
             if (canvas) {
@@ -1462,8 +1549,6 @@ export function Canvas() {
                 ctx.font = ta.style.fontSize + ' ' + fontFamily;
                 const maxWidth = Math.max(20, ...lines.map(line => ctx.measureText(line || ' ').width));
                 ta.style.width = (maxWidth + 20 + padding) + 'px';
-
-                // Auto-pan canvas if text extends near edge
                 const taRight = parseFloat(ta.style.left) + maxWidth + 20 + padding;
                 const screenRight = window.innerWidth - 80;
                 if (taRight > screenRight) {
@@ -1475,7 +1560,6 @@ export function Canvas() {
               }
             }
           }
-
           if (isCodeEdit) {
             setEditorOverlayHtml(buildCodeHighlightHtml(ta.value, codeLanguage, findActive && findQuery ? findQuery : ''));
           } else if (findActive && findQuery) {
@@ -1483,6 +1567,41 @@ export function Canvas() {
           }
         }}
       />
+
+      {/* Connector label editor */}
+      {connectorLabelEdit && (
+        <input
+          autoFocus
+          value={connectorLabelEdit.value}
+          onChange={(e) => setConnectorLabelEdit(prev => prev ? { ...prev, value: e.target.value } : null)}
+          onBlur={() => {
+            if (connectorLabelEdit) {
+              useElementStore.getState().updateElement(connectorLabelEdit.elementId, {
+                connectorLabel: connectorLabelEdit.value.trim() || undefined,
+              });
+            }
+            setConnectorLabelEdit(null);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === 'Escape') {
+              if (e.key === 'Enter' && connectorLabelEdit) {
+                useElementStore.getState().updateElement(connectorLabelEdit.elementId, {
+                  connectorLabel: connectorLabelEdit.value.trim() || undefined,
+                });
+              }
+              setConnectorLabelEdit(null);
+            }
+          }}
+          placeholder="Label…"
+          className="absolute text-[12px] px-2 py-1 rounded-lg border border-indigo-400 bg-white dark:bg-gray-900 text-gray-800 dark:text-gray-200 outline-none shadow-sm z-50 min-w-[80px]"
+          style={{
+            left: connectorLabelEdit.screenX - 40,
+            top: connectorLabelEdit.screenY - 14,
+            transform: 'translate(-50%, -50%)',
+          }}
+        />
+      )}
+
       {contextMenu && (
         <ContextMenu
           x={contextMenu.x}

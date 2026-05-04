@@ -1,10 +1,14 @@
 // ─── Element Types ───────────────────────────────────────────────
 
-export type ElementType = 'rectangle' | 'diamond' | 'ellipse' | 'line' | 'arrow' | 'freehand' | 'text' | 'image';
+export type ElementType = 'rectangle' | 'diamond' | 'ellipse' | 'line' | 'arrow' | 'freehand' | 'text' | 'image' | 'frame';
 
 export type StrokeStyle = 'solid' | 'dashed' | 'dotted';
 
 export type FillStyle = 'solid' | 'hachure' | 'cross-hatch';
+
+export type ConnectorStyle = 'straight' | 'elbow';
+
+export type ConnectionPoint = 'n' | 's' | 'e' | 'w' | 'center';
 
 export type Tool = 'select' | 'hand' | ElementType;
 
@@ -20,6 +24,11 @@ export interface Bounds {
   height: number;
 }
 
+export interface ConnectionBinding {
+  elementId: string;
+  point: ConnectionPoint;
+}
+
 export interface CanvasElement {
   id: string;
   type: ElementType;
@@ -32,7 +41,7 @@ export interface CanvasElement {
   // For text elements
   text?: string;
   fontSize?: number;
-  textWrap?: boolean; // wrap text at element.width
+  textWrap?: boolean;
   // For code elements (text with syntax highlighting)
   isCode?: boolean;
   codeLanguage?: string;
@@ -54,6 +63,36 @@ export interface CanvasElement {
   // Metadata (future-ready for collaboration)
   createdAt: number;
   updatedAt: number;
+
+  // ── Feature: Lock ──────────────────────────────────────────────
+  /** When true, element cannot be selected or edited */
+  locked?: boolean;
+
+  // ── Feature: Grouping ──────────────────────────────────────────
+  /** Elements sharing the same groupId move/select together */
+  groupId?: string;
+
+  // ── Feature: Hyperlinks ────────────────────────────────────────
+  /** URL opened on Ctrl+click in select mode */
+  hyperlink?: string;
+
+  // ── Feature: Smart Connectors ──────────────────────────────────
+  /** Bind arrow start to a shape's connection point */
+  startBinding?: ConnectionBinding;
+  /** Bind arrow end to a shape's connection point */
+  endBinding?: ConnectionBinding;
+
+  // ── Feature: Connector Style ───────────────────────────────────
+  /** Routing style for arrow/line elements */
+  connectorStyle?: ConnectorStyle;
+
+  // ── Feature: Connector Labels ──────────────────────────────────
+  /** Text label displayed at the midpoint of an arrow/line */
+  connectorLabel?: string;
+
+  // ── Feature: Frames ────────────────────────────────────────────
+  /** Display name shown at top of a frame element */
+  frameName?: string;
 }
 
 // ─── Canvas State ────────────────────────────────────────────────
@@ -102,4 +141,26 @@ export interface ExportOptions {
   format: 'png' | 'json' | 'svg';
   background: boolean;
   padding: number;
+}
+
+// ─── Alignment ───────────────────────────────────────────────────
+
+export type AlignmentType = 'left' | 'centerX' | 'right' | 'top' | 'centerY' | 'bottom';
+export type DistributionType = 'horizontal' | 'vertical';
+
+// ─── Alignment Guides ────────────────────────────────────────────
+
+export interface AlignmentGuide {
+  type: 'vertical' | 'horizontal';
+  position: number;
+  start: number;
+  end: number;
+}
+
+// ─── Shape Library ───────────────────────────────────────────────
+
+export interface LibraryItem {
+  id: string;
+  name: string;
+  elements: CanvasElement[];
 }

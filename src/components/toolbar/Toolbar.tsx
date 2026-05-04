@@ -1,8 +1,14 @@
 import { ToolSelector } from './ToolSelector';
 import { StylePanel } from './StylePanel';
 import { ActionBar } from './ActionBar';
+import { AlignBar } from './AlignBar';
+import { LibraryIcon } from './ToolIcons';
+import { useShapeLibraryStore } from '../../store/shapeLibraryStore';
+import { ShapeLibrary } from '../ui/ShapeLibrary';
 
 export function Toolbar() {
+  const { toggleOpen, isOpen } = useShapeLibraryStore();
+
   const panelClasses = `
     bg-white/98 dark:bg-gray-900/98
     backdrop-blur-xl
@@ -16,17 +22,35 @@ export function Toolbar() {
       {/* Tools - Left side vertical */}
       <div className={`absolute left-5 top-1/2 -translate-y-1/2 z-40 flex flex-col gap-2.5 p-5 ${panelClasses}`}>
         <ToolSelector />
+
+        {/* Shape Library button at bottom of tool panel */}
+        <div className="h-px w-full bg-gray-950/[0.05] dark:bg-white/[0.06] my-1" />
+        <button
+          title="Shape Library"
+          onClick={toggleOpen}
+          className={`w-9 h-9 flex items-center justify-center rounded-xl transition-colors duration-100 ${
+            isOpen
+              ? 'bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400'
+              : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/[0.06] hover:text-gray-800 dark:hover:text-gray-200'
+          }`}
+        >
+          <LibraryIcon />
+        </button>
       </div>
 
-      {/* Styles - Top center horizontal */}
-      <div className={`absolute top-5 left-1/2 -translate-x-1/2 z-40 flex items-center px-4 py-2.5 ${panelClasses}`}>
+      {/* Styles + Align - Top center horizontal */}
+      <div className={`absolute top-5 left-1/2 -translate-x-1/2 z-40 flex items-center px-4 py-2.5 gap-3 ${panelClasses}`}>
         <StylePanel />
+        <AlignBar />
       </div>
 
       {/* Actions - Right side vertical */}
       <div className={`absolute right-5 top-1/2 -translate-y-1/2 z-40 flex flex-col gap-2.5 p-5 ${panelClasses}`}>
         <ActionBar />
       </div>
+
+      {/* Shape Library panel */}
+      <ShapeLibrary />
     </>
   );
 }

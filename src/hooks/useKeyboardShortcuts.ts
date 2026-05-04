@@ -13,6 +13,7 @@ import { detectCode, CODE_FONT, CODE_FONT_SIZE, CODE_LINE_HEIGHT, CODE_PADDING }
 const KEY_TOOL_MAP: Record<string, Tool> = {
   v: 'select',
   h: 'hand',
+  f: 'frame',
   r: 'rectangle',
   d: 'diamond',
   o: 'ellipse',
@@ -233,7 +234,7 @@ export function useKeyboardShortcuts(onToggleShortcuts?: () => void) {
       }
 
       const { activeTool, setActiveTool, selectedIds, clearSelection } = useToolStore.getState();
-      const { removeElements, duplicateElements } = useElementStore.getState();
+      const { removeElements, duplicateElements, groupElements, ungroupElements, lockElements } = useElementStore.getState();
 
       // ? key: toggle keyboard shortcuts dialog
       if (e.key === '?' && !e.ctrlKey && !e.metaKey) {
@@ -424,6 +425,47 @@ export function useKeyboardShortcuts(onToggleShortcuts?: () => void) {
           { x: minX, y: minY, width: maxX - minX, height: maxY - minY },
           window.innerWidth, window.innerHeight,
         );
+        return;
+      }
+
+      // Ctrl+G: Group selected elements
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key === 'g') {
+        e.preventDefault();
+        if (selectedIds.length >= 2) {
+          groupElements(selectedIds);
+        }
+        return;
+      }
+
+      // Ctrl+Shift+G: Ungroup selected elements
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'G') {
+        e.preventDefault();
+        if (selectedIds.length > 0) {
+          const { elements } = useElementStore.getState();
+          const groupIds = new Set(
+            elements
+              .filter(el => selectedIds.includes(el.id) && el.groupId)
+              .map(el => el.groupId as string)
+          );
+          const idsToUngroup = elements
+            .filter(el => el.groupId && groupIds.has(el.groupId))
+            .map(el => el.id);
+          if (idsToUngroup.length > 0) ungroupElements(idsToUngroup);
+        }
+        return;
+      }
+
+      // Ctrl+L: Lock/Unlock selected elements
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key === 'l') {
+        e.preventDefault();
+        if (selectedIds.length > 0) {
+          const { elements } = useElementStore.getState();
+          const allLocked = elements
+            .filter(el => selectedIds.includes(el.id))
+            .every(el => el.locked);
+          lockElements(selectedIds, !allLocked);
+          if (!allLocked) clearSelection();
+        }
         return;
       }
 

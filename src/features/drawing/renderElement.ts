@@ -4,7 +4,6 @@ import type { CanvasElement } from '../../types';
 import { tokenizeLine, getTokenColor, CODE_THEME_DARK, CODE_FONT, CODE_LINE_HEIGHT, CODE_PADDING, CODE_BORDER_RADIUS } from '../../utils/codeDetection';
 import { wrapTextToLines } from '../../utils/textWrap';
 
-// Cache loaded images so the render loop doesn't recreate them every frame
 const imageCache = new Map<string, HTMLImageElement>();
 
 function getCachedImage(src: string): HTMLImageElement | null {
@@ -16,9 +15,6 @@ function getCachedImage(src: string): HTMLImageElement | null {
   return img.complete ? img : null;
 }
 
-/**
- * Convert our strokeStyle to rough.js strokeLineDash
- */
 function getStrokeLineDash(strokeStyle: string | undefined, strokeWidth: number): number[] | undefined {
   if (!strokeStyle || strokeStyle === 'solid') return undefined;
   if (strokeStyle === 'dashed') return [8 + strokeWidth, 4 + strokeWidth];
@@ -26,18 +22,12 @@ function getStrokeLineDash(strokeStyle: string | undefined, strokeWidth: number)
   return undefined;
 }
 
-/**
- * Convert our fillStyle to rough.js fillStyle
- */
 function getRoughFillStyle(fillStyle: string | undefined): RoughOptions['fillStyle'] {
   if (fillStyle === 'solid') return 'solid';
   if (fillStyle === 'cross-hatch') return 'cross-hatch';
-  return 'hachure'; // default
+  return 'hachure';
 }
 
-/**
- * Renders a single element to the canvas using rough.js for hand-drawn feel.
- */
 interface TextHighlightRange {
   start: number;
   length: number;
@@ -46,6 +36,7 @@ interface TextHighlightRange {
 
 interface RenderElementOptions {
   textHighlights?: TextHighlightRange[];
+  isDark?: boolean;
 }
 
 export function renderElement(
@@ -72,13 +63,12 @@ export function renderElement(
     case 'rectangle': {
       const r = element.edgeRoundness || 0;
       if (r > 0) {
-        // Rough.js doesn't support rounded rectangles directly, draw with path
         const x = element.x;
         const y = element.y;
         const w = element.width;
         const h = element.height;
         const radius = Math.min(r, Math.abs(w) / 2, Math.abs(h) / 2);
-        const path = `M ${x + radius} ${y} 
+        const path = `M ${x + radius} ${y}
           L ${x + w - radius} ${y} Q ${x + w} ${y} ${x + w} ${y + radius}
           L ${x + w} ${y + h - radius} Q ${x + w} ${y + h} ${x + w - radius} ${y + h}
           L ${x + radius} ${y + h} Q ${x} ${y + h} ${x} ${y + h - radius}
@@ -90,17 +80,21 @@ export function renderElement(
       break;
     }
 
+    case 'frame': {
+      renderFrame(ctx, element, renderOptions?.isDark);
+      break;
+    }
+
     case 'diamond': {
       const cx = element.x + element.width / 2;
       const cy = element.y + element.height / 2;
       const hw = element.width / 2;
       const hh = element.height / 2;
-      // Diamond as a polygon (4 points: top, right, bottom, left)
       rc.polygon([
-        [cx, cy - hh],     // top
-        [cx + hw, cy],     // right
-        [cx, cy + hh],     // bottom
-        [cx - hw, cy],     // left
+        [cx, cy - hh],
+        [cx + hw, cy],
+        [cx, cy + hh],
+        [cx - hw, cy],
       ], options);
       break;
     }
@@ -117,42 +111,31 @@ export function renderElement(
 
     case 'line':
       if (element.points && element.points.length >= 2) {
-        const p1 = element.points[0];
-        const p2 = element.points[1];
-        rc.line(
-          p1.x + element.x,
-          p1.y + element.y,
-          p2.x + element.x,
-          p2.y + element.y,
-          options,
-        );
+        if (element.connectorStyle === 'elbow') {
+          renderElbowConnector(rc, ctx, element, options, false);
+        } else {
+          const p1 = element.points[0];
+          const p2 = element.points[1];
+          rc.line(
+            p1.x + element.x,
+            p1.y + element.y,
+            p2.x + element.x,
+            p2.y + element.y,
+            options,
+          );
+        }
+        renderConnectorLabel(ctx, element);
       }
       break;
 
     case 'arrow':
       if (element.points && element.points.length >= 2) {
-        const p1 = element.points[0];
-        const p2 = element.points[1];
-        const x1 = p1.x + element.x;
-        const y1 = p1.y + element.y;
-        const x2 = p2.x + element.x;
-        const y2 = p2.y + element.y;
-
-        // Draw the line
-        rc.line(x1, y1, x2, y2, options);
-
-        // Draw arrowhead
-        const angle = Math.atan2(y2 - y1, x2 - x1);
-        const headLen = 16 + element.strokeWidth * 2;
-        const headAngle = Math.PI / 6;
-
-        const ax1 = x2 - headLen * Math.cos(angle - headAngle);
-        const ay1 = y2 - headLen * Math.sin(angle - headAngle);
-        const ax2 = x2 - headLen * Math.cos(angle + headAngle);
-        const ay2 = y2 - headLen * Math.sin(angle + headAngle);
-
-        rc.line(x2, y2, ax1, ay1, options);
-        rc.line(x2, y2, ax2, ay2, options);
+        if (element.connectorStyle === 'elbow') {
+          renderElbowConnector(rc, ctx, element, options, true);
+        } else {
+          renderStraightArrow(rc, element, options);
+        }
+        renderConnectorLabel(ctx, element);
       }
       break;
 
@@ -174,7 +157,6 @@ export function renderElement(
         if (img) {
           ctx.drawImage(img, element.x, element.y, element.width, element.height);
         } else {
-          // Image still loading — draw placeholder
           ctx.strokeStyle = element.strokeColor;
           ctx.lineWidth = 1;
           ctx.strokeRect(element.x, element.y, element.width, element.height);
@@ -235,19 +217,225 @@ export function renderElement(
       break;
   }
 
+  // Render hyperlink icon overlay
+  if (element.hyperlink) {
+    renderHyperlinkIcon(ctx, element);
+  }
+
+  // Render lock icon overlay
+  if (element.locked) {
+    renderLockIcon(ctx, element);
+  }
+
   ctx.restore();
 }
 
-/**
- * Renders a code block with syntax highlighting, rounded background, and monospace font.
- */
+// ─── Straight arrow ──────────────────────────────────────────────
+
+function renderStraightArrow(rc: RoughCanvas, element: CanvasElement, options: RoughOptions) {
+  if (!element.points || element.points.length < 2) return;
+  const p1 = element.points[0];
+  const p2 = element.points[1];
+  const x1 = p1.x + element.x;
+  const y1 = p1.y + element.y;
+  const x2 = p2.x + element.x;
+  const y2 = p2.y + element.y;
+
+  rc.line(x1, y1, x2, y2, options);
+
+  const angle = Math.atan2(y2 - y1, x2 - x1);
+  const headLen = 16 + element.strokeWidth * 2;
+  const headAngle = Math.PI / 6;
+
+  const ax1 = x2 - headLen * Math.cos(angle - headAngle);
+  const ay1 = y2 - headLen * Math.sin(angle - headAngle);
+  const ax2 = x2 - headLen * Math.cos(angle + headAngle);
+  const ay2 = y2 - headLen * Math.sin(angle + headAngle);
+
+  rc.line(x2, y2, ax1, ay1, options);
+  rc.line(x2, y2, ax2, ay2, options);
+}
+
+// ─── Elbow connector ─────────────────────────────────────────────
+
+function renderElbowConnector(
+  rc: RoughCanvas,
+  ctx: CanvasRenderingContext2D,
+  element: CanvasElement,
+  options: RoughOptions,
+  withArrowhead: boolean,
+) {
+  if (!element.points || element.points.length < 2) return;
+  const p1 = element.points[0];
+  const p2 = element.points[1];
+  const x1 = p1.x + element.x;
+  const y1 = p1.y + element.y;
+  const x2 = p2.x + element.x;
+  const y2 = p2.y + element.y;
+
+  // Route: (x1,y1) → (midX, y1) → (midX, y2) → (x2, y2)
+  const midX = (x1 + x2) / 2;
+
+  rc.line(x1, y1, midX, y1, options);
+  rc.line(midX, y1, midX, y2, options);
+  rc.line(midX, y2, x2, y2, options);
+
+  if (withArrowhead) {
+    // Arrowhead at (x2, y2) pointing in final segment direction
+    const angle = Math.atan2(y2 - y2, x2 - midX); // horizontal final segment
+    const finalAngle = x2 >= midX ? 0 : Math.PI;
+    const headLen = 16 + element.strokeWidth * 2;
+    const headAngle = Math.PI / 6;
+
+    rc.line(
+      x2, y2,
+      x2 - headLen * Math.cos(finalAngle - headAngle),
+      y2 - headLen * Math.sin(finalAngle - headAngle),
+      options,
+    );
+    rc.line(
+      x2, y2,
+      x2 - headLen * Math.cos(finalAngle + headAngle),
+      y2 - headLen * Math.sin(finalAngle + headAngle),
+      options,
+    );
+    void angle;
+  }
+}
+
+// ─── Connector label ─────────────────────────────────────────────
+
+function renderConnectorLabel(ctx: CanvasRenderingContext2D, element: CanvasElement) {
+  if (!element.connectorLabel || !element.points || element.points.length < 2) return;
+
+  const p1 = element.points[0];
+  const p2 = element.points[1];
+  const midX = (p1.x + element.x + p2.x + element.x) / 2;
+  const midY = (p1.y + element.y + p2.y + element.y) / 2;
+
+  const fontSize = 13;
+  ctx.font = `${fontSize}px 'Virgil', 'Segoe Print', 'Comic Sans MS', cursive`;
+  ctx.textBaseline = 'middle';
+  ctx.textAlign = 'center';
+
+  const textWidth = ctx.measureText(element.connectorLabel).width;
+  const pad = 4;
+  const bgW = textWidth + pad * 2;
+  const bgH = fontSize + pad * 2;
+
+  // White background pill
+  ctx.fillStyle = 'rgba(255,255,255,0.92)';
+  ctx.beginPath();
+  ctx.roundRect(midX - bgW / 2, midY - bgH / 2, bgW, bgH, 4);
+  ctx.fill();
+
+  ctx.strokeStyle = 'rgba(99,102,241,0.4)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([]);
+  ctx.stroke();
+
+  ctx.fillStyle = element.strokeColor;
+  ctx.fillText(element.connectorLabel, midX, midY);
+  ctx.textAlign = 'left';
+}
+
+// ─── Frame ───────────────────────────────────────────────────────
+
+function renderFrame(ctx: CanvasRenderingContext2D, element: CanvasElement, isDark = false) {
+  const { x, y, width, height } = element;
+
+  // Frame border: dashed
+  ctx.save();
+  ctx.strokeStyle = isDark ? 'rgba(148,163,184,0.5)' : 'rgba(100,116,139,0.5)';
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([6, 4]);
+  ctx.strokeRect(x, y, width, height);
+  ctx.setLineDash([]);
+
+  // Frame background: very subtle tint
+  ctx.fillStyle = isDark ? 'rgba(255,255,255,0.02)' : 'rgba(0,0,0,0.01)';
+  ctx.fillRect(x, y, width, height);
+
+  // Frame label above top-left
+  const name = element.frameName || 'Frame';
+  const labelSize = 12;
+  ctx.font = `600 ${labelSize}px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif`;
+  ctx.textBaseline = 'bottom';
+  ctx.fillStyle = isDark ? 'rgba(148,163,184,0.8)' : 'rgba(71,85,105,0.8)';
+  ctx.fillText(name, x + 4, y - 3);
+
+  ctx.restore();
+}
+
+// ─── Lock icon ───────────────────────────────────────────────────
+
+function renderLockIcon(ctx: CanvasRenderingContext2D, element: CanvasElement) {
+  const bounds = {
+    x: element.x,
+    y: element.y,
+    width: element.width,
+    height: element.height,
+  };
+
+  const iconX = bounds.x + bounds.width - 18;
+  const iconY = bounds.y + 2;
+  const size = 14;
+
+  ctx.save();
+  ctx.fillStyle = 'rgba(99,102,241,0.85)';
+  ctx.beginPath();
+  ctx.roundRect(iconX - 2, iconY - 2, size + 4, size + 4, 3);
+  ctx.fill();
+
+  // Simple padlock path
+  ctx.strokeStyle = '#fff';
+  ctx.lineWidth = 1.5;
+  ctx.fillStyle = '#fff';
+
+  // Shackle
+  ctx.beginPath();
+  ctx.arc(iconX + size / 2, iconY + 4, 3.5, Math.PI, 0);
+  ctx.stroke();
+
+  // Body
+  ctx.fillRect(iconX + 1, iconY + 5, size - 2, size - 7);
+  ctx.restore();
+}
+
+// ─── Hyperlink icon ──────────────────────────────────────────────
+
+function renderHyperlinkIcon(ctx: CanvasRenderingContext2D, element: CanvasElement) {
+  if (element.type === 'line' || element.type === 'arrow' || element.type === 'freehand') return;
+
+  const iconX = element.x + 2;
+  const iconY = element.y + element.height - 16;
+
+  ctx.save();
+  ctx.strokeStyle = '#1971c2';
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([]);
+
+  // Chain link icon: two overlapping rounded rectangles
+  const w = 10;
+  const h = 6;
+  ctx.beginPath();
+  ctx.roundRect(iconX, iconY + 2, w, h, 2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.roundRect(iconX + 5, iconY, w, h, 2);
+  ctx.stroke();
+
+  ctx.restore();
+}
+
+// ─── Code block ──────────────────────────────────────────────────
+
 function renderCodeBlock(ctx: CanvasRenderingContext2D, element: CanvasElement, highlightRanges?: TextHighlightRange[]) {
   const fontSize = element.fontSize ?? 14;
   const lineHeight = fontSize * CODE_LINE_HEIGHT;
   const lines = (element.text ?? '').split('\n');
   const language = element.codeLanguage ?? 'code';
 
-  // Detect theme from background brightness (use dark theme by default for code)
   const theme = CODE_THEME_DARK;
 
   const x = element.x;
@@ -255,7 +443,6 @@ function renderCodeBlock(ctx: CanvasRenderingContext2D, element: CanvasElement, 
   const w = element.width;
   const h = element.height;
 
-  // Draw rounded background
   ctx.fillStyle = theme.background;
   ctx.beginPath();
   const r = CODE_BORDER_RADIUS;
@@ -271,12 +458,10 @@ function renderCodeBlock(ctx: CanvasRenderingContext2D, element: CanvasElement, 
   ctx.closePath();
   ctx.fill();
 
-  // Draw subtle border
   ctx.strokeStyle = 'rgba(255,255,255,0.08)';
   ctx.lineWidth = 1;
   ctx.stroke();
 
-  // Draw language badge
   if (language && language !== 'code') {
     ctx.font = `${Math.max(10, fontSize - 2)}px ${CODE_FONT}`;
     ctx.fillStyle = 'rgba(255,255,255,0.3)';
@@ -286,7 +471,6 @@ function renderCodeBlock(ctx: CanvasRenderingContext2D, element: CanvasElement, 
     ctx.textAlign = 'left';
   }
 
-  // Render each line with syntax highlighting
   ctx.font = `${fontSize}px ${CODE_FONT}`;
   ctx.textBaseline = 'top';
 
@@ -336,9 +520,6 @@ function renderCodeBlock(ctx: CanvasRenderingContext2D, element: CanvasElement, 
   });
 }
 
-/**
- * Simple string hash for consistent rough.js seed per element
- */
 function hashStringToNumber(str: string): number {
   let hash = 0;
   for (let i = 0; i < str.length; i++) {

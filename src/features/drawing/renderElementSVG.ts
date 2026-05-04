@@ -52,6 +52,30 @@ export function renderElementSVG(
   parent.appendChild(g);
 
   switch (element.type) {
+    case 'frame': {
+      // Frame: dashed border rectangle with name label
+      const frameRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+      frameRect.setAttribute('x', String(element.x));
+      frameRect.setAttribute('y', String(element.y));
+      frameRect.setAttribute('width', String(element.width));
+      frameRect.setAttribute('height', String(element.height));
+      frameRect.setAttribute('fill', 'rgba(0,0,0,0.01)');
+      frameRect.setAttribute('stroke', 'rgba(100,116,139,0.5)');
+      frameRect.setAttribute('stroke-width', '1.5');
+      frameRect.setAttribute('stroke-dasharray', '6 4');
+      g.appendChild(frameRect);
+      const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+      label.setAttribute('x', String(element.x + 4));
+      label.setAttribute('y', String(element.y - 4));
+      label.setAttribute('font-size', '12');
+      label.setAttribute('font-weight', '600');
+      label.setAttribute('fill', 'rgba(71,85,105,0.8)');
+      label.setAttribute('font-family', '-apple-system, BlinkMacSystemFont, sans-serif');
+      label.textContent = element.frameName ?? 'Frame';
+      g.appendChild(label);
+      break;
+    }
+
     case 'rectangle': {
       const r = element.edgeRoundness || 0;
       if (r > 0) {
