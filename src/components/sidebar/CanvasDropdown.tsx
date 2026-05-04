@@ -79,8 +79,8 @@ export function CanvasDropdown() {
           aria-label="Open canvas switcher"
           className={`w-14 h-14 rounded-2xl flex items-center justify-center transition-all duration-200 ${
             open
-              ? 'bg-indigo-500 shadow-lg shadow-indigo-500/40 text-white scale-[0.96]'
-              : 'bg-white/90 dark:bg-gray-900/90 backdrop-blur-lg shadow-md shadow-black/[0.06] dark:shadow-black/30 ring-1 ring-black/[0.06] dark:ring-white/[0.07] text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:shadow-lg hover:scale-[1.03]'
+              ? 'bg-indigo-500 shadow-[0_4px_16px_rgba(99,102,241,0.45)] text-white scale-[0.96]'
+              : 'bg-white/95 dark:bg-gray-900/95 backdrop-blur-lg shadow-[0_4px_16px_rgba(0,0,0,0.08),0_1px_4px_rgba(0,0,0,0.04)] dark:shadow-[0_4px_16px_rgba(0,0,0,0.4)] border border-black/[0.06] dark:border-white/[0.07] text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:shadow-[0_6px_20px_rgba(0,0,0,0.10)] hover:scale-[1.04]'
           }`}
         >
           <svg
@@ -97,17 +97,17 @@ export function CanvasDropdown() {
             Uses position:fixed so it escapes App's overflow:hidden clip.
             Top = button top (20px) + button height (56px) + gap (10px) = 86px */}
         {open && (
-          <div className="fixed top-[86px] left-5 w-[380px] bg-white dark:bg-[#13131f] rounded-3xl shadow-2xl shadow-black/[0.16] dark:shadow-black/60 ring-1 ring-black/[0.05] dark:ring-white/[0.07] z-[50] animate-in fade-in slide-in-from-top-2 duration-200">
+          <div className="fixed top-[86px] left-5 w-[380px] bg-white dark:bg-[#13131f] rounded-3xl shadow-[0_16px_48px_rgba(0,0,0,0.14),0_4px_12px_rgba(0,0,0,0.06)] dark:shadow-[0_16px_48px_rgba(0,0,0,0.65)] border border-black/[0.05] dark:border-white/[0.06] z-[50] animate-in fade-in slide-in-from-top-2 duration-200">
 
             {/* Header */}
-            <div className="px-6 pt-6 pb-4">
+            <div className="px-6 pt-6 pb-5">
               <p className="text-[11px] uppercase tracking-[0.14em] font-semibold text-gray-400 dark:text-gray-500 select-none">
                 Canvases
               </p>
             </div>
 
             {/* Canvas list */}
-            <div className="px-4 pb-2 max-h-[320px] overflow-y-auto space-y-1.5">
+            <div className="px-4 pb-2 max-h-[320px] overflow-y-auto space-y-2">
               {canvasList.length === 0 && (
                 <div className="flex flex-col items-center gap-2.5 py-12">
                   <div className="w-12 h-12 rounded-2xl bg-gray-50 dark:bg-white/[0.04] flex items-center justify-center">
@@ -128,10 +128,10 @@ export function CanvasDropdown() {
                 return (
                   <div
                     key={canvas.id}
-                    className={`group relative flex items-center gap-4 px-4 py-3.5 rounded-2xl cursor-pointer transition-all duration-150 ${
+                    className={`group relative flex items-center gap-4 px-5 py-4 rounded-2xl cursor-pointer transition-all duration-150 ${
                       isActive
                         ? 'bg-indigo-50 dark:bg-indigo-500/[0.10]'
-                        : 'hover:bg-gray-50 dark:hover:bg-white/[0.03]'
+                        : 'hover:bg-gray-50 dark:hover:bg-white/[0.04]'
                     }`}
                     onClick={() => {
                       if (!isRenaming) { openCanvas(canvas.id); close(); }
@@ -231,10 +231,10 @@ export function CanvasDropdown() {
             </div>
 
             {/* New Canvas */}
-            <div className="p-4 pt-3">
+            <div className="p-5 pt-3">
               <button
                 onClick={handleCreate}
-                className="w-full flex items-center justify-center gap-2.5 px-4 py-4 rounded-2xl text-[14px] font-semibold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/[0.08] hover:bg-amber-100/80 dark:hover:bg-amber-500/[0.14] border border-dashed border-amber-300 dark:border-amber-500/30 hover:border-amber-400 dark:hover:border-amber-500/50 transition-all duration-150"
+                className="w-full flex items-center justify-center gap-2.5 px-4 py-4 rounded-2xl text-[14px] font-semibold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-500/[0.08] hover:bg-indigo-100/80 dark:hover:bg-indigo-500/[0.14] border border-dashed border-indigo-200 dark:border-indigo-500/30 hover:border-indigo-300 dark:hover:border-indigo-500/50 transition-all duration-150"
               >
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
                   <line x1="12" y1="5" x2="12" y2="19" />

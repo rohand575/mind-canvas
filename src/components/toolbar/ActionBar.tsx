@@ -113,7 +113,7 @@ export function ActionBar() {
   };
 
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="flex flex-col gap-2">
       <IconButton title="Undo (Ctrl+Z)" onClick={undo} className={canUndo ? '' : 'opacity-40'}>
         <UndoIcon />
       </IconButton>
@@ -121,7 +121,7 @@ export function ActionBar() {
         <RedoIcon />
       </IconButton>
 
-      <div className="h-px w-full bg-gray-950/[0.05] dark:bg-white/[0.06] my-3" />
+      <div className="h-px w-full bg-gray-950/[0.05] dark:bg-white/[0.06] my-4" />
 
       <IconButton title="Delete selected (Del)" onClick={handleDelete}>
         <TrashIcon />
@@ -130,7 +130,7 @@ export function ActionBar() {
         <ClearIcon />
       </IconButton>
 
-      <div className="h-px w-full bg-gray-950/[0.05] dark:bg-white/[0.06] my-3" />
+      <div className="h-px w-full bg-gray-950/[0.05] dark:bg-white/[0.06] my-4" />
 
       <IconButton title="Toggle grid (G)" onClick={toggleGrid} active={showGrid}>
         <GridIcon />
@@ -139,7 +139,7 @@ export function ActionBar() {
         {theme === 'dark' ? <SunIcon /> : <MoonIcon />}
       </IconButton>
 
-      <div className="h-px w-full bg-gray-950/[0.05] dark:bg-white/[0.06] my-3" />
+      <div className="h-px w-full bg-gray-950/[0.05] dark:bg-white/[0.06] my-4" />
 
       <IconButton title="Open Project (.mcv)" onClick={handleOpenProject}>
         <UploadIcon />
@@ -150,9 +150,9 @@ export function ActionBar() {
         <IconButton title="Export" onClick={() => setExportOpen(!exportOpen)}>
           <DownloadIcon />
         </IconButton>
-        <div className={`absolute top-0 right-full mr-3 transition-all duration-150 ease-out origin-right bg-white dark:bg-gray-900 backdrop-blur-lg rounded-2xl shadow-xl shadow-black/[0.08] dark:shadow-black/30 ring-1 ring-gray-950/[0.06] dark:ring-white/[0.08] p-2.5 min-w-[250px] z-50
+        <div className={`absolute top-0 right-full mr-3 transition-all duration-150 ease-out origin-right bg-white/98 dark:bg-gray-900/98 backdrop-blur-xl rounded-2xl shadow-[0_8px_28px_rgba(0,0,0,0.10),0_2px_8px_rgba(0,0,0,0.05)] dark:shadow-[0_8px_28px_rgba(0,0,0,0.5)] border border-black/[0.06] dark:border-white/[0.07] p-3 min-w-[260px] z-50
           ${exportOpen ? 'opacity-100 scale-100' : 'opacity-0 scale-[0.97] pointer-events-none'}`}>
-          <span className="block px-2 pt-0.5 pb-3 text-[11px] uppercase tracking-wider font-semibold text-gray-400 dark:text-gray-500 select-none">Export</span>
+          <span className="block px-2.5 pt-1 pb-3.5 text-[11px] uppercase tracking-wider font-semibold text-gray-400 dark:text-gray-500 select-none">Export</span>
           <div className="flex flex-col gap-0.5">
             <button
               onClick={() => { handleExportPNG(); setExportOpen(false); }}
@@ -191,7 +191,7 @@ export function ActionBar() {
               </div>
             </button>
           </div>
-          <div className="h-px bg-gray-950/[0.05] dark:bg-white/[0.06] my-2 mx-1" />
+          <div className="h-px bg-gray-950/[0.05] dark:bg-white/[0.06] my-2.5 mx-1.5" />
           <div className="flex flex-col gap-0.5">
             <button
               onClick={() => { handleSaveProject(); setExportOpen(false); }}
@@ -222,7 +222,7 @@ export function ActionBar() {
       </div>
 
       {/* Zoom indicator & zoom to fit */}
-      <div className="h-px w-full bg-gray-950/[0.05] dark:bg-white/[0.06] my-3" />
+      <div className="h-px w-full bg-gray-950/[0.05] dark:bg-white/[0.06] my-4" />
       <IconButton
         title="Zoom to fit (Ctrl+1)"
         onClick={() => {
@@ -243,11 +243,11 @@ export function ActionBar() {
           <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
         </svg>
       </IconButton>
-      <span className="text-xs text-gray-500 dark:text-gray-400 text-center tabular-nums font-medium bg-gray-100/80 dark:bg-white/[0.06] rounded-lg px-2 py-1">
+      <span className="text-[11px] text-gray-500 dark:text-gray-400 text-center tabular-nums font-semibold bg-gray-100/90 dark:bg-white/[0.07] rounded-lg px-2.5 py-1.5 tracking-tight">
         {Math.round(zoom * 100)}%
       </span>
 
-      <div className="h-px w-full bg-gray-950/[0.05] dark:bg-white/[0.06] my-3" />
+      <div className="h-px w-full bg-gray-950/[0.05] dark:bg-white/[0.06] my-4" />
       <IconButton title="Keyboard shortcuts (?)" onClick={() => useCanvasStore.getState().toggleShortcuts()}>
         <HelpIcon />
       </IconButton>

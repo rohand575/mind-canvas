@@ -288,7 +288,7 @@ export function MiniMap() {
 
   return (
     <div
-      className="absolute bottom-6 left-6 z-40 select-none"
+      className="absolute bottom-5 left-5 z-40 select-none"
       style={{ width: collapsed ? 'auto' : MM_W }}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
@@ -327,10 +327,10 @@ export function MiniMap() {
         >
           <div
             className={`
-              rounded-xl overflow-hidden
+              rounded-2xl overflow-hidden
               ${isDark
-                ? 'bg-[#111318]/90 ring-1 ring-white/[0.07] shadow-[0_4px_24px_rgba(0,0,0,0.4)]'
-                : 'bg-white/90 ring-1 ring-black/[0.06] shadow-[0_4px_20px_rgba(0,0,0,0.09)]'}
+                ? 'bg-[#111318]/92 border border-white/[0.07] shadow-[0_8px_28px_rgba(0,0,0,0.45)]'
+                : 'bg-white/92 border border-black/[0.06] shadow-[0_8px_24px_rgba(0,0,0,0.10)]'}
             `}
             style={{ backdropFilter: 'blur(20px)' }}
           >

@@ -106,13 +106,13 @@ export function ContextMenu({ x, y, onClose }: ContextMenuProps) {
     onClose();
   };
 
-  const menuItemClass = 'w-[calc(100%-8px)] mx-1 px-3 py-2 text-left text-sm rounded-lg hover:bg-gray-500/[0.06] dark:hover:bg-white/[0.06] transition-colors duration-100 flex items-center justify-between';
-  const shortcutClass = 'text-xs text-gray-400 dark:text-gray-500 ml-4';
+  const menuItemClass = 'w-[calc(100%-10px)] mx-1.5 px-3.5 py-2.5 text-left text-sm rounded-xl hover:bg-gray-500/[0.06] dark:hover:bg-white/[0.06] transition-colors duration-100 flex items-center justify-between';
+  const shortcutClass = 'text-xs text-gray-400 dark:text-gray-500 ml-6';
 
   return (
     <div
       ref={menuRef}
-      className="fixed bg-white/95 dark:bg-gray-900/95 backdrop-blur-lg rounded-xl shadow-lg shadow-black/[0.06] dark:shadow-black/25 ring-1 ring-gray-950/[0.05] dark:ring-white/[0.08] py-1.5 min-w-[200px] z-[100] animate-in fade-in zoom-in-95"
+      className="fixed bg-white/98 dark:bg-gray-900/98 backdrop-blur-xl rounded-2xl shadow-[0_8px_28px_rgba(0,0,0,0.10),0_2px_8px_rgba(0,0,0,0.05)] dark:shadow-[0_8px_28px_rgba(0,0,0,0.5)] border border-black/[0.06] dark:border-white/[0.07] py-2.5 min-w-[220px] z-[100] animate-in fade-in zoom-in-95"
       style={{ left: position.x, top: position.y }}
     >
       {selectedIds.length > 0 && (
@@ -126,7 +126,7 @@ export function ContextMenu({ x, y, onClose }: ContextMenuProps) {
           <button onClick={handleDuplicate} className={menuItemClass + ' text-gray-700 dark:text-gray-300'}>
             Duplicate <span className={shortcutClass}>Ctrl+D</span>
           </button>
-          <div className="h-px bg-gray-950/[0.04] dark:bg-white/[0.06] my-1 mx-3" />
+          <div className="h-px bg-gray-950/[0.05] dark:bg-white/[0.06] my-1.5 mx-3" />
           <button onClick={handleDelete} className={menuItemClass + ' text-red-600 dark:text-red-400'}>
             Delete <span className={shortcutClass}>Del</span>
           </button>
@@ -139,7 +139,7 @@ export function ContextMenu({ x, y, onClose }: ContextMenuProps) {
       )}
       {singleSelected && (
         <>
-          <div className="h-px bg-gray-950/[0.04] dark:bg-white/[0.06] my-1 mx-3" />
+          <div className="h-px bg-gray-950/[0.05] dark:bg-white/[0.06] my-1.5 mx-3" />
           <button onClick={handleBringToFront} className={menuItemClass + ' text-gray-700 dark:text-gray-300'}>
             Bring to front <span className={shortcutClass}>Ctrl+Shift+]</span>
           </button>

@@ -18,7 +18,7 @@ export default function App() {
 
   return (
     <div className={`w-full h-full no-select overflow-hidden ${theme === 'dark' ? 'dark' : ''}`}>
-      <div className="relative w-full h-full bg-gray-50 dark:bg-[#1a1a2e] overflow-hidden">
+      <div className="relative w-full h-full bg-[#f4f5f7] dark:bg-[#14141f] overflow-hidden">
         <CanvasDropdown />
         <Toolbar />
         <Canvas />

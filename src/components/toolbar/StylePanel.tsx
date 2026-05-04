@@ -33,7 +33,7 @@ function Popover({
     <div ref={ref} className="relative">
       <div onClick={() => setOpen(!open)}>{trigger}</div>
       <div
-        className={`absolute top-full mt-3 bg-white/98 dark:bg-gray-900/98 backdrop-blur-xl rounded-2xl shadow-2xl shadow-black/15 dark:shadow-black/40 ring-1 ring-black/[0.04] dark:ring-white/[0.08] border border-white/60 dark:border-white/[0.05] p-4 z-50 min-w-max
+        className={`absolute top-full mt-3 bg-white/98 dark:bg-gray-900/98 backdrop-blur-xl rounded-2xl shadow-[0_8px_28px_rgba(0,0,0,0.10),0_2px_8px_rgba(0,0,0,0.05)] dark:shadow-[0_8px_28px_rgba(0,0,0,0.5)] border border-black/[0.06] dark:border-white/[0.07] p-5 z-50 min-w-max
           transition-all duration-200 ease-out origin-top
           ${open ? 'opacity-100 scale-100 translate-y-0' : 'opacity-0 scale-[0.95] -translate-y-2 pointer-events-none'}
           ${align === 'center' ? 'left-1/2 -translate-x-1/2' : 'left-0'}
@@ -66,10 +66,10 @@ function SegmentGroup<T extends string | number>({
         <button
           key={String(opt)}
           onClick={() => onChange(opt)}
-          className={`w-10 h-10 flex items-center justify-center rounded-lg transition-all duration-200 ${
+          className={`w-10 h-10 flex items-center justify-center rounded-lg transition-all duration-150 ${
             value === opt
-              ? 'bg-white dark:bg-gray-700 shadow-md shadow-black/[0.06] text-gray-900 dark:text-gray-100 ring-1 ring-black/[0.03]'
-              : 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-white/50 dark:hover:bg-white/[0.04]'
+              ? 'bg-white dark:bg-gray-700 shadow-[0_2px_8px_rgba(0,0,0,0.07)] dark:shadow-[0_2px_8px_rgba(0,0,0,0.3)] text-gray-900 dark:text-gray-100 ring-1 ring-black/[0.04]'
+              : 'text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-white/60 dark:hover:bg-white/[0.05]'
           }`}
         >
           {renderOption(opt, value === opt)}
@@ -125,7 +125,7 @@ function Label({ children }: { children: React.ReactNode }) {
 // ─── Divider ────────────────────────────────────────────────────────
 
 function Divider() {
-  return <div className="w-px h-7 bg-gray-950/[0.06] dark:bg-white/[0.06] mx-2 flex-shrink-0" />;
+  return <div className="w-px h-7 bg-gray-950/[0.06] dark:bg-white/[0.06] mx-3 flex-shrink-0" />;
 }
 
 // ─── Trigger Button ─────────────────────────────────────────────────
@@ -141,10 +141,10 @@ function TriggerBtn({
 }) {
   return (
     <button
-      className={`h-11 px-2.5 rounded-xl flex items-center gap-2 transition-all duration-150 ease-out cursor-pointer active:scale-[0.96] ${
+      className={`h-11 px-3 rounded-xl flex items-center gap-2 transition-all duration-150 ease-out cursor-pointer active:scale-[0.96] ${
         active
-          ? 'bg-indigo-500/[0.08] dark:bg-indigo-400/[0.12] text-indigo-600 dark:text-indigo-400'
-          : 'text-gray-500 dark:text-gray-400 hover:bg-gray-500/[0.06] dark:hover:bg-white/[0.06] hover:text-gray-700 dark:hover:text-gray-200'
+          ? 'bg-indigo-500/[0.09] dark:bg-indigo-400/[0.14] text-indigo-600 dark:text-indigo-400'
+          : 'text-gray-500 dark:text-gray-400 hover:bg-gray-500/[0.07] dark:hover:bg-white/[0.07] hover:text-gray-700 dark:hover:text-gray-200'
       }`}
       title={title}
     >
@@ -181,7 +181,7 @@ export function StylePanel() {
   const STROKE_WIDTH_OPTS = [1, 2, 4] as const;
 
   return (
-    <div className="flex items-center gap-2 px-5">
+    <div className="flex items-center gap-3 px-6">
       {/* ── Colors ── */}
       <div className="flex items-center gap-0.5">
         {/* Stroke Color */}
@@ -195,9 +195,9 @@ export function StylePanel() {
             </TriggerBtn>
           }
         >
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-3">
             <Label>Stroke color</Label>
-            <div className="grid grid-cols-4 gap-1.5">
+            <div className="grid grid-cols-4 gap-2">
               {COLOR_PALETTE.filter(c => c !== 'transparent').map((color) => (
                 <ColorSwatch
                   key={`s-${color}`}
@@ -227,9 +227,9 @@ export function StylePanel() {
             </TriggerBtn>
           }
         >
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-3">
             <Label>Fill color</Label>
-            <div className="grid grid-cols-5 gap-1.5">
+            <div className="grid grid-cols-5 gap-2">
               {COLOR_PALETTE.map((color) => (
                 <ColorSwatch
                   key={`f-${color}`}
@@ -333,14 +333,14 @@ export function StylePanel() {
           </TriggerBtn>
         }
       >
-        <div className="flex flex-col gap-2 w-36">
+        <div className="flex flex-col gap-3 w-40">
           <Label>Roughness</Label>
-          <div className="flex flex-col gap-0.5">
+          <div className="flex flex-col gap-1">
             {ROUGHNESS_LEVELS.map((r, i) => (
               <button
                 key={r}
                 onClick={() => { setRoughness(r); applyToSelected({ roughness: r }); }}
-                className={`h-8 px-2.5 rounded-lg flex items-center gap-2.5 transition-all duration-150 ${
+                className={`h-9 px-3 rounded-lg flex items-center gap-2.5 transition-all duration-150 ${
                   roughness === r
                     ? 'bg-indigo-500/[0.08] dark:bg-indigo-400/[0.12] text-indigo-600 dark:text-indigo-400'
                     : 'text-gray-600 dark:text-gray-400 hover:bg-gray-500/[0.06] dark:hover:bg-white/[0.06]'
@@ -368,7 +368,7 @@ export function StylePanel() {
           </TriggerBtn>
         }
       >
-        <div className="flex flex-col gap-2.5 w-44">
+        <div className="flex flex-col gap-3 w-48">
           <Label>Opacity</Label>
           <input
             type="range"
@@ -424,14 +424,14 @@ export function StylePanel() {
               </TriggerBtn>
             }
           >
-            <div className="flex flex-col gap-2">
+            <div className="flex flex-col gap-3">
               <Label>Font size</Label>
               <div className="flex flex-col gap-0.5 max-h-52 overflow-y-auto">
                 {FONT_SIZES.map((s) => (
                   <button
                     key={s}
                     onClick={() => { setFontSize(s); applyToSelected({ fontSize: s }); }}
-                    className={`h-7 px-2.5 rounded-md flex items-center text-sm transition-all duration-150 ${
+                    className={`h-8 px-3 rounded-lg flex items-center text-sm transition-all duration-150 ${
                       fontSize === s
                         ? 'bg-indigo-500/[0.08] dark:bg-indigo-400/[0.12] text-indigo-600 dark:text-indigo-400 font-medium'
                         : 'text-gray-600 dark:text-gray-400 hover:bg-gray-500/[0.06] dark:hover:bg-white/[0.06]'

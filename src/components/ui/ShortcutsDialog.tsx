@@ -81,14 +81,14 @@ export function ShortcutsDialog({ open, onClose }: ShortcutsDialogProps) {
     <div className="fixed inset-0 z-[100] flex items-center justify-center" onClick={onClose}>
       <div className="absolute inset-0 bg-black/40 backdrop-blur-md" />
       <div
-        className="relative bg-white dark:bg-gray-900 rounded-2xl shadow-2xl shadow-black/[0.12] dark:shadow-black/40 ring-1 ring-gray-950/[0.05] dark:ring-white/[0.1] px-10 py-8 max-w-4xl w-full mx-6 max-h-[85vh] overflow-y-auto animate-in fade-in zoom-in-95"
+        className="relative bg-white dark:bg-gray-900 rounded-3xl shadow-[0_24px_64px_rgba(0,0,0,0.12),0_8px_24px_rgba(0,0,0,0.06)] dark:shadow-[0_24px_64px_rgba(0,0,0,0.6)] border border-black/[0.05] dark:border-white/[0.07] px-10 py-8 max-w-4xl w-full mx-6 max-h-[85vh] overflow-y-auto animate-in fade-in zoom-in-95"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between mb-8 pb-6 border-b border-gray-100 dark:border-gray-800">
+        <div className="flex items-center justify-between mb-8 pb-6 border-b border-gray-100/80 dark:border-gray-800">
           <div>
-            <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Keyboard Shortcuts</h2>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Quick reference for all available shortcuts</p>
+            <h2 className="text-[22px] font-bold tracking-tight text-gray-900 dark:text-gray-100">Keyboard Shortcuts</h2>
+            <p className="text-[13px] text-gray-500 dark:text-gray-400 mt-1.5">Quick reference for all available shortcuts</p>
           </div>
           <button
             onClick={onClose}
@@ -104,20 +104,20 @@ export function ShortcutsDialog({ open, onClose }: ShortcutsDialogProps) {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-10">
           {SHORTCUT_GROUPS.map((group) => (
             <div key={group.title} className="min-w-0">
-              <h3 className="text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-widest mb-4 flex items-center gap-2">
-                <span className="w-1.5 h-1.5 rounded-full bg-gray-300 dark:bg-gray-600"></span>
+              <h3 className="text-[11px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-[0.1em] mb-4 flex items-center gap-2.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-indigo-400/60 dark:bg-indigo-500/60"></span>
                 {group.title}
               </h3>
-              <div className="rounded-xl bg-gray-50/50 dark:bg-gray-800/30 border border-gray-100 dark:border-gray-800 overflow-hidden">
+              <div className="rounded-2xl bg-gray-50/60 dark:bg-gray-800/30 border border-gray-100 dark:border-gray-800 overflow-hidden">
                 {group.shortcuts.map((s, idx) => (
-                  <div 
-                    key={s.key} 
-                    className={`flex items-center justify-between gap-6 px-4 py-3 hover:bg-gray-100/70 dark:hover:bg-gray-800/50 transition-colors ${
-                      idx !== group.shortcuts.length - 1 ? 'border-b border-gray-100 dark:border-gray-800/50' : ''
+                  <div
+                    key={s.key}
+                    className={`flex items-center justify-between gap-6 px-5 py-3.5 hover:bg-gray-100/70 dark:hover:bg-gray-800/50 transition-colors ${
+                      idx !== group.shortcuts.length - 1 ? 'border-b border-gray-100/80 dark:border-gray-800/50' : ''
                     }`}
                   >
-                    <span className="text-sm text-gray-700 dark:text-gray-300 font-medium">{s.description}</span>
-                    <kbd className="inline-flex items-center justify-center min-w-[2rem] px-2.5 py-1.5 rounded-lg text-xs font-mono font-semibold bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 border border-gray-200 dark:border-gray-600 shadow-[0_2px_0_0_rgba(0,0,0,0.05),inset_0_-1px_0_0_rgba(0,0,0,0.05)] dark:shadow-[0_2px_0_0_rgba(0,0,0,0.3),inset_0_-1px_0_0_rgba(255,255,255,0.05)] whitespace-nowrap">
+                    <span className="text-[13px] text-gray-700 dark:text-gray-300 font-medium">{s.description}</span>
+                    <kbd className="inline-flex items-center justify-center min-w-[2rem] px-2.5 py-1.5 rounded-lg text-[11px] font-mono font-semibold bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-200 border border-gray-200 dark:border-gray-600 shadow-[0_2px_0_0_rgba(0,0,0,0.05),inset_0_-1px_0_0_rgba(0,0,0,0.05)] dark:shadow-[0_2px_0_0_rgba(0,0,0,0.3),inset_0_-1px_0_0_rgba(255,255,255,0.05)] whitespace-nowrap">
                       {s.key}
                     </kbd>
                   </div>
@@ -128,10 +128,10 @@ export function ShortcutsDialog({ open, onClose }: ShortcutsDialogProps) {
         </div>
 
         {/* Footer */}
-        <div className="mt-10 pt-6 border-t border-gray-100 dark:border-gray-800">
-          <p className="text-sm text-center text-gray-400 dark:text-gray-500">
+        <div className="mt-10 pt-6 border-t border-gray-100/80 dark:border-gray-800">
+          <p className="text-[13px] text-center text-gray-400 dark:text-gray-500">
             Press{' '}
-            <kbd className="inline-flex items-center justify-center px-2 py-1 rounded-md text-xs font-mono font-semibold bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-600 shadow-[0_2px_0_0_rgba(0,0,0,0.05)] dark:shadow-[0_2px_0_0_rgba(0,0,0,0.3)]">
+            <kbd className="inline-flex items-center justify-center px-2 py-1 rounded-md text-[11px] font-mono font-semibold bg-white dark:bg-gray-700 text-gray-600 dark:text-gray-300 border border-gray-200 dark:border-gray-600 shadow-[0_2px_0_0_rgba(0,0,0,0.05)] dark:shadow-[0_2px_0_0_rgba(0,0,0,0.3)]">
               ?
             </kbd>
             {' '}to toggle this dialog

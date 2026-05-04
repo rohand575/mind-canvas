@@ -46,10 +46,10 @@ export function CanvasList() {
     <div className="flex flex-col flex-1 min-h-0">
 
       {/* New canvas — sits in its own section with generous margins */}
-      <div className="px-6 py-5">
+      <div className="px-5 py-5">
         <button
           onClick={handleCreate}
-          className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl text-[13px] font-medium text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-500/[0.08] hover:bg-indigo-100/70 dark:hover:bg-indigo-500/[0.14] transition-all duration-150"
+          className="w-full flex items-center gap-3 px-4 py-3.5 rounded-xl text-[13px] font-medium text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-500/[0.08] hover:bg-indigo-100/70 dark:hover:bg-indigo-500/[0.14] transition-all duration-150 shadow-sm"
         >
           <div className="w-5 h-5 rounded-md bg-indigo-500/15 dark:bg-indigo-400/20 flex items-center justify-center flex-shrink-0">
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.8" strokeLinecap="round">
@@ -84,15 +84,15 @@ export function CanvasList() {
         )}
 
         {canvasList.length > 0 && (
-          <div className="px-3 pt-5 pb-6">
-            <p className="text-[10px] uppercase tracking-widest font-semibold text-gray-400 dark:text-gray-500 px-3 mb-3">
+          <div className="px-4 pt-5 pb-6">
+            <p className="text-[10px] uppercase tracking-[0.1em] font-semibold text-gray-400 dark:text-gray-500 px-3 mb-3">
               All canvases
             </p>
-            <div className="flex flex-col gap-0.5">
+            <div className="flex flex-col gap-1">
               {canvasList.map((canvas) => (
                 <div
                   key={canvas.id}
-                  className={`group relative flex items-center gap-3 px-3 py-3 rounded-lg cursor-pointer transition-colors duration-100
+                  className={`group relative flex items-center gap-3 px-3.5 py-3 rounded-xl cursor-pointer transition-all duration-150
                     ${canvas.id === currentCanvasId
                       ? 'bg-indigo-500/[0.08] dark:bg-indigo-400/[0.12]'
                       : 'hover:bg-gray-100/80 dark:hover:bg-white/[0.04]'
@@ -180,8 +180,8 @@ export function CanvasList() {
       </div>
 
       {/* Footer — anchors the bottom so the sidebar doesn't feel empty */}
-      <div className="px-6 py-5 border-t border-gray-100 dark:border-white/[0.06]">
-        <p className="text-[11px] text-gray-300 dark:text-gray-600 font-medium tracking-wide">Canvas v1.0</p>
+      <div className="px-6 py-5 border-t border-gray-100/80 dark:border-white/[0.06]">
+        <p className="text-[11px] text-gray-400/70 dark:text-gray-600 font-medium tracking-wide">Mind Canvas v1.0</p>
       </div>
 
     </div>
