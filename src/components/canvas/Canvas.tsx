@@ -8,7 +8,7 @@ import { useHistory } from '../../hooks/useHistory';
 import { renderElement } from '../../features/drawing/renderElement';
 import { renderGrid } from '../../features/drawing/renderGrid';
 import { renderSelection, renderSelectionBox } from '../../features/selection/renderSelection';
-import { hitTestElement, getResizeHandleAtPoint, normalizeBounds, getElementBounds, boundsOverlap } from '../../utils/geometry';
+import { hitTestElement, getResizeHandleAtPoint, getEndpointHandleAtPoint, normalizeBounds, getElementBounds, boundsOverlap } from '../../utils/geometry';
 import { createElement } from '../../utils/createElement';
 import { wrapTextToLines } from '../../utils/textWrap';
 import { GRID_SIZE } from '../../constants';
@@ -33,6 +33,7 @@ type InteractionMode =
   | { type: 'drawing'; element: CanvasElement }
   | { type: 'moving'; startX: number; startY: number; originals: Map<string, { x: number; y: number }> }
   | { type: 'resizing'; elementId: string; handle: ResizeHandle; startX: number; startY: number; original: { x: number; y: number; width: number; height: number; fontSize?: number; points?: Point[]; text?: string; textWrap?: boolean }; elementType: string }
+  | { type: 'editing-point'; elementId: string; pointIndex: number; originalX: number; originalY: number; originalPoints: Point[] }
   | { type: 'selecting'; startX: number; startY: number }
   | { type: 'text-input' };
 
@@ -574,6 +575,26 @@ export function Canvas() {
       const { elements, addElement, getMaxZIndex } = useElementStore.getState();
 
       if (activeTool === 'select') {
+        // Check if clicking on an endpoint handle of a selected line/arrow element
+        for (const id of selectedIds) {
+          const el = elements.find((e) => e.id === id);
+          if (el && (el.type === 'line' || el.type === 'arrow') && el.points) {
+            const pointIdx = getEndpointHandleAtPoint(canvasPoint, el);
+            if (pointIdx !== null) {
+              saveSnapshot();
+              interactionRef.current = {
+                type: 'editing-point',
+                elementId: id,
+                pointIndex: pointIdx,
+                originalX: el.x,
+                originalY: el.y,
+                originalPoints: el.points.map((p) => ({ ...p })),
+              };
+              return;
+            }
+          }
+        }
+
         // Check if clicking on a resize handle of selected element
         for (const id of selectedIds) {
           const el = elements.find((e) => e.id === id);
@@ -809,6 +830,28 @@ export function Canvas() {
         } else {
           updateElement(elementId, { x, y, width, height });
         }
+      } else if (interaction.type === 'editing-point') {
+        const { elementId, pointIndex, originalX, originalY, originalPoints } = interaction;
+        const snapped = snapPoint(rawCanvasPoint, snap);
+        // Optional: shift-key constrains to 0/45/90 degrees relative to the other endpoint (for 2-point lines/arrows)
+        let targetX = snapped.x;
+        let targetY = snapped.y;
+        if (e.shiftKey && originalPoints.length === 2) {
+          const otherIdx = pointIndex === 0 ? 1 : 0;
+          const anchorX = originalPoints[otherIdx].x + originalX;
+          const anchorY = originalPoints[otherIdx].y + originalY;
+          const dx = targetX - anchorX;
+          const dy = targetY - anchorY;
+          const angle = Math.atan2(dy, dx);
+          const step = Math.PI / 4; // 45 degrees
+          const snappedAngle = Math.round(angle / step) * step;
+          const len = Math.hypot(dx, dy);
+          targetX = anchorX + Math.cos(snappedAngle) * len;
+          targetY = anchorY + Math.sin(snappedAngle) * len;
+        }
+        const newPoints = originalPoints.map((p) => ({ ...p }));
+        newPoints[pointIndex] = { x: targetX - originalX, y: targetY - originalY };
+        updateElement(elementId, { points: newPoints });
       } else if (interaction.type === 'selecting') {
         const { startX, startY } = interaction;
         selectionBoxRef.current = normalizeBounds(
@@ -927,6 +970,14 @@ export function Canvas() {
     for (const id of selectedIds) {
       const el = elements.find((e) => e.id === id);
       if (el) {
+        // Endpoint handles for line/arrow take priority
+        if ((el.type === 'line' || el.type === 'arrow') && el.points) {
+          const pointIdx = getEndpointHandleAtPoint(canvasPoint, el);
+          if (pointIdx !== null) {
+            canvas.style.cursor = 'grab';
+            return;
+          }
+        }
         const handle = getResizeHandleAtPoint(canvasPoint, el);
         if (handle) {
           const cursorMap: Record<ResizeHandle, string> = {

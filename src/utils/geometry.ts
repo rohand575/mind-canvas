@@ -139,6 +139,11 @@ export function getResizeHandleAtPoint(
   point: Point,
   element: CanvasElement,
 ): ResizeHandle | null {
+  // Line/arrow elements use endpoint handles instead of bounding-box handles
+  if (element.type === 'line' || element.type === 'arrow') {
+    return null;
+  }
+
   const bounds = getElementBounds(element);
   const halfHandle = HANDLE_SIZE / 2;
   const handles: { handle: ResizeHandle; x: number; y: number }[] = [
@@ -161,6 +166,30 @@ export function getResizeHandleAtPoint(
     }
   }
 
+  return null;
+}
+
+/**
+ * Get the index of an endpoint handle at the given point for line/arrow elements.
+ * Returns the index into element.points, or null if no handle is hit.
+ */
+export function getEndpointHandleAtPoint(
+  point: Point,
+  element: CanvasElement,
+): number | null {
+  if (element.type !== 'line' && element.type !== 'arrow') return null;
+  if (!element.points || element.points.length === 0) return null;
+
+  // Endpoint handles are circular and slightly larger than corner handles for easier grabbing
+  const radius = HANDLE_SIZE / 2 + 3;
+  for (let i = 0; i < element.points.length; i++) {
+    const p = element.points[i];
+    const hx = p.x + element.x;
+    const hy = p.y + element.y;
+    if (Math.hypot(point.x - hx, point.y - hy) <= radius) {
+      return i;
+    }
+  }
   return null;
 }
 

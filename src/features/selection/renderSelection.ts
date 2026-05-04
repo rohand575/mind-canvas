@@ -14,6 +14,24 @@ export function renderSelection(
   ctx.save();
 
   for (const element of selectedElements) {
+    // Lines and arrows: render endpoint handles instead of a bounding-box gizmo
+    if ((element.type === 'line' || element.type === 'arrow') && element.points && element.points.length > 0) {
+      ctx.fillStyle = '#ffffff';
+      ctx.strokeStyle = '#6366f1';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([]);
+      const radius = HANDLE_SIZE / 2 + 1;
+      for (const p of element.points) {
+        const hx = p.x + element.x;
+        const hy = p.y + element.y;
+        ctx.beginPath();
+        ctx.arc(hx, hy, radius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+      }
+      continue;
+    }
+
     const bounds = getElementBounds(element);
     const padded: Bounds = {
       x: bounds.x - SELECTION_PADDING,
@@ -36,9 +54,9 @@ export function renderSelection(
       { x: padded.x, y: padded.y + padded.height },
       { x: padded.x + padded.width, y: padded.y + padded.height },
       { x: padded.x + padded.width / 2, y: padded.y },
+      { x: padded.x + padded.width, y: padded.y + padded.height / 2 },
       { x: padded.x + padded.width / 2, y: padded.y + padded.height },
       { x: padded.x, y: padded.y + padded.height / 2 },
-      { x: padded.x + padded.width, y: padded.y + padded.height / 2 },
     ];
 
     ctx.fillStyle = '#ffffff';
