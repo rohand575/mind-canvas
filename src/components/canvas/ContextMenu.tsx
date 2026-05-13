@@ -17,6 +17,8 @@ export function ContextMenu({ x, y, onClose }: ContextMenuProps) {
   const [position, setPosition] = useState({ x, y });
   const [hyperlinkInput, setHyperlinkInput] = useState(false);
   const [hyperlinkValue, setHyperlinkValue] = useState('');
+  const [embedUrlInput, setEmbedUrlInput] = useState(false);
+  const [embedUrlValue, setEmbedUrlValue] = useState('');
 
   useEffect(() => {
     if (!menuRef.current) return;
@@ -63,6 +65,7 @@ export function ContextMenu({ x, y, onClose }: ContextMenuProps) {
   const hasGroup = selectedElements.some(el => el.groupId);
   const allGrouped = selectedElements.length > 1 && selectedElements.every(el => el.groupId && el.groupId === selectedElements[0].groupId);
   const isArrowOrLine = singleElement && (singleElement.type === 'arrow' || singleElement.type === 'line');
+  const isEmbed = singleElement?.type === 'embed';
 
   const handleCopy = () => {
     const selected = elements.filter((el) => selectedIds.includes(el.id));
@@ -154,6 +157,19 @@ export function ContextMenu({ x, y, onClose }: ContextMenuProps) {
     onClose();
   };
 
+  const handleEditEmbedUrl = () => {
+    setEmbedUrlValue(singleElement?.embedUrl ?? '');
+    setEmbedUrlInput(true);
+  };
+
+  const handleSaveEmbedUrl = () => {
+    if (singleSelected) {
+      const url = embedUrlValue.trim();
+      useElementStore.getState().updateElement(singleSelected, { embedUrl: url || undefined });
+    }
+    onClose();
+  };
+
   const handleToggleElbow = () => {
     if (!singleElement) return;
     const newStyle = singleElement.connectorStyle === 'elbow' ? 'straight' : 'elbow';
@@ -200,6 +216,26 @@ export function ContextMenu({ x, y, onClose }: ContextMenuProps) {
             </button>
           </div>
         </div>
+      ) : embedUrlInput ? (
+        <div className="px-3 py-2 flex flex-col gap-2">
+          <span className="text-[11px] text-gray-500 dark:text-gray-400">Embed URL</span>
+          <input
+            autoFocus
+            value={embedUrlValue}
+            onChange={(e) => setEmbedUrlValue(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') handleSaveEmbedUrl(); if (e.key === 'Escape') setEmbedUrlInput(false); }}
+            placeholder="https://youtube.com/watch?v=..."
+            className="text-[13px] px-2.5 py-1.5 rounded-lg border border-gray-200 dark:border-white/10 bg-transparent text-gray-800 dark:text-gray-200 outline-none focus:ring-1 focus:ring-indigo-400 w-full"
+          />
+          <div className="flex gap-2">
+            <button onClick={handleSaveEmbedUrl} className="flex-1 text-[12px] py-1.5 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 transition-colors">
+              Save
+            </button>
+            <button onClick={() => setEmbedUrlInput(false)} className="text-[12px] py-1.5 px-3 rounded-lg hover:bg-gray-100 dark:hover:bg-white/[0.06] text-gray-600 dark:text-gray-400 transition-colors">
+              Cancel
+            </button>
+          </div>
+        </div>
       ) : (
         <>
           {selectedIds.length > 0 && (
@@ -241,8 +277,18 @@ export function ContextMenu({ x, y, onClose }: ContextMenuProps) {
                 Add to Library
               </button>
 
-              {/* Hyperlink (single element) */}
-              {singleElement && (
+              {/* Embed URL (embed elements only) */}
+              {isEmbed && singleElement && (
+                <>
+                  {sep}
+                  <button onClick={handleEditEmbedUrl} className={item + ' text-gray-700 dark:text-gray-300'}>
+                    {singleElement.embedUrl ? 'Edit Embed URL' : 'Add Embed URL'}
+                  </button>
+                </>
+              )}
+
+              {/* Hyperlink (non-embed single element) */}
+              {singleElement && !isEmbed && (
                 <>
                   {sep}
                   {singleElement.hyperlink ? (

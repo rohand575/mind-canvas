@@ -23,6 +23,7 @@ interface CreateElementOptions {
   isCode?: boolean;
   codeLanguage?: string;
   imageData?: string;
+  embedUrl?: string;
   strokeColor?: string;
   fillColor?: string;
   strokeWidth?: number;
@@ -59,6 +60,7 @@ export function createElement(options: CreateElementOptions): CanvasElement {
     isCode: options.isCode,
     codeLanguage: options.codeLanguage,
     imageData: options.imageData,
+    embedUrl: options.embedUrl,
     strokeColor: options.strokeColor ?? DEFAULT_STROKE_COLOR,
     fillColor: options.fillColor ?? (options.type === 'frame' ? 'transparent' : DEFAULT_FILL_COLOR),
     strokeWidth: options.strokeWidth ?? DEFAULT_STROKE_WIDTH,

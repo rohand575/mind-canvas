@@ -164,6 +164,11 @@ export function renderElement(
       }
       break;
 
+    case 'embed': {
+      renderEmbedPlaceholder(ctx, element, renderOptions?.isDark);
+      break;
+    }
+
     case 'text':
       if (element.isCode) {
         renderCodeBlock(ctx, element, renderOptions?.textHighlights);
@@ -518,6 +523,113 @@ function renderCodeBlock(ctx: CanvasRenderingContext2D, element: CanvasElement, 
       cursorX += ctx.measureText(token.text).width;
     }
   });
+}
+
+// ─── Embed placeholder ───────────────────────────────────────────
+
+function renderEmbedPlaceholder(ctx: CanvasRenderingContext2D, element: CanvasElement, isDark = false) {
+  const { x, y, width: w, height: h } = element;
+  if (w <= 0 || h <= 0) return;
+
+  ctx.save();
+
+  // Card background
+  ctx.fillStyle = isDark ? '#1e293b' : '#ffffff';
+  ctx.beginPath();
+  ctx.roundRect(x, y, w, h, 6);
+  ctx.fill();
+
+  // Card border
+  ctx.strokeStyle = isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)';
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([]);
+  ctx.stroke();
+
+  // Browser chrome header bar
+  const headerH = Math.min(28, h * 0.15);
+  ctx.fillStyle = isDark ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.04)';
+  ctx.beginPath();
+  ctx.roundRect(x, y, w, headerH, [6, 6, 0, 0]);
+  ctx.fill();
+
+  // Separator line under header
+  ctx.strokeStyle = isDark ? 'rgba(255,255,255,0.07)' : 'rgba(0,0,0,0.07)';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(x, y + headerH);
+  ctx.lineTo(x + w, y + headerH);
+  ctx.stroke();
+
+  // Traffic-light dots
+  const dotY = y + headerH / 2;
+  const dotColors = ['#ff5f57', '#febc2e', '#28c840'];
+  dotColors.forEach((color, i) => {
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(x + 10 + i * 14, dotY, 3.5, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  // URL pill in header
+  if (w > 120 && element.embedUrl) {
+    ctx.fillStyle = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.06)';
+    const pillW = Math.min(w - 80, 200);
+    const pillH = headerH - 8;
+    ctx.beginPath();
+    ctx.roundRect(x + w / 2 - pillW / 2, y + 4, pillW, pillH, 3);
+    ctx.fill();
+
+    ctx.fillStyle = isDark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.35)';
+    ctx.font = `10px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif`;
+    ctx.textBaseline = 'middle';
+    ctx.textAlign = 'center';
+    let urlText = element.embedUrl.replace(/^https?:\/\//, '');
+    while (ctx.measureText(urlText).width > pillW - 8 && urlText.length > 8) {
+      urlText = urlText.slice(0, -4) + '...';
+    }
+    ctx.fillText(urlText, x + w / 2, y + headerH / 2);
+    ctx.textAlign = 'left';
+  }
+
+  // Center play icon (only when there's enough space)
+  if (h > headerH + 40) {
+    const bodyH = h - headerH;
+    const cx = x + w / 2;
+    const cy = y + headerH + bodyH / 2;
+    const iconR = Math.min(24, bodyH * 0.25, w * 0.15);
+
+    ctx.fillStyle = isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.07)';
+    ctx.beginPath();
+    ctx.arc(cx, cy, iconR + 6, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = isDark ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.2)';
+    ctx.beginPath();
+    ctx.moveTo(cx - iconR * 0.4, cy - iconR * 0.6);
+    ctx.lineTo(cx + iconR * 0.7, cy);
+    ctx.lineTo(cx - iconR * 0.4, cy + iconR * 0.6);
+    ctx.closePath();
+    ctx.fill();
+
+    // "Click to interact" hint
+    if (element.embedUrl && h > 100) {
+      ctx.fillStyle = isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.18)';
+      ctx.font = `11px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif`;
+      ctx.textBaseline = 'middle';
+      ctx.textAlign = 'center';
+      ctx.fillText('Double-click to interact', cx, cy + iconR + 18);
+      ctx.textAlign = 'left';
+    } else if (!element.embedUrl) {
+      ctx.fillStyle = isDark ? 'rgba(255,255,255,0.2)' : 'rgba(0,0,0,0.18)';
+      ctx.font = `11px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif`;
+      ctx.textBaseline = 'middle';
+      ctx.textAlign = 'center';
+      ctx.fillText('Double-click to add URL', cx, cy + iconR + 18);
+      ctx.textAlign = 'left';
+    }
+  }
+
+  ctx.restore();
 }
 
 function hashStringToNumber(str: string): number {

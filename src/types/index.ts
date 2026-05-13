@@ -1,6 +1,6 @@
 // ─── Element Types ───────────────────────────────────────────────
 
-export type ElementType = 'rectangle' | 'diamond' | 'ellipse' | 'line' | 'arrow' | 'freehand' | 'text' | 'image' | 'frame';
+export type ElementType = 'rectangle' | 'diamond' | 'ellipse' | 'line' | 'arrow' | 'freehand' | 'text' | 'image' | 'frame' | 'embed';
 
 export type StrokeStyle = 'solid' | 'dashed' | 'dotted';
 
@@ -47,6 +47,8 @@ export interface CanvasElement {
   codeLanguage?: string;
   // For image elements
   imageData?: string;
+  // For embed elements
+  embedUrl?: string;
   // Style
   strokeColor: string;
   fillColor: string;

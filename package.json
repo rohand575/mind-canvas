@@ -1,4 +1,4 @@
- {
+{
   "name": "canvas",
   "private": true,
   "version": "1.0.0",
@@ -11,8 +11,8 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "electron:dev": "vite build && electron .",
-    "electron:build": "vite build && electron-builder --win"
+    "electron:dev": "cross-env ELECTRON=true vite build && electron .",
+    "electron:build": "cross-env ELECTRON=true CSC_IDENTITY_AUTO_DISCOVERY=false vite build && electron-builder --win"
   },
   "build": {
     "appId": "com.canvas.app",
@@ -58,6 +58,7 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.0",
+    "cross-env": "^10.1.0",
     "electron": "^41.0.2",
     "electron-builder": "^26.8.1",
     "eslint": "^9.39.4",

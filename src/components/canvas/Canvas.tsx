@@ -46,10 +46,18 @@ type InteractionMode =
   | { type: 'none' }
   | { type: 'drawing'; element: CanvasElement }
   | { type: 'moving'; startX: number; startY: number; originals: Map<string, { x: number; y: number }> }
-  | { type: 'resizing'; elementId: string; handle: ResizeHandle; startX: number; startY: number; original: { x: number; y: number; width: number; height: number; fontSize?: number; points?: Point[]; text?: string; textWrap?: boolean }; elementType: string }
+  | { type: 'resizing'; elementId: string; handle: ResizeHandle; startX: number; startY: number; original: { x: number; y: number; width: number; height: number; fontSize?: number; points?: Point[]; text?: string; textWrap?: boolean; isCode?: boolean }; elementType: string }
   | { type: 'editing-point'; elementId: string; pointIndex: number; originalX: number; originalY: number; originalPoints: Point[] }
   | { type: 'selecting'; startX: number; startY: number }
   | { type: 'text-input' };
+
+function getEmbedUrl(url: string): string {
+  const ytMatch = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]+)/);
+  if (ytMatch) return `https://www.youtube.com/embed/${ytMatch[1]}?rel=0&modestbranding=1`;
+  const vimeoMatch = url.match(/vimeo\.com\/(\d+)/);
+  if (vimeoMatch) return `https://player.vimeo.com/video/${vimeoMatch[1]}`;
+  return url;
+}
 
 /** Compute alignment guides for elements being moved */
 function computeAlignmentGuides(
@@ -130,6 +138,13 @@ export function Canvas() {
   const alignmentGuidesRef = useRef<AlignmentGuide[]>([]);
 
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+
+  // Embed iframe overlay
+  const embedContainerRef = useRef<HTMLDivElement>(null);
+  const [activeEmbedId, setActiveEmbedId] = useState<string | null>(null);
+  const [embedUrlEdit, setEmbedUrlEdit] = useState<{
+    elementId: string; screenX: number; screenY: number; value: string;
+  } | null>(null);
 
   // Connector label editing
   const [connectorLabelEdit, setConnectorLabelEdit] = useState<{
@@ -445,6 +460,10 @@ export function Canvas() {
       }
     }
 
+    if (embedContainerRef.current) {
+      embedContainerRef.current.style.transform = `translate(${offsetX}px, ${offsetY}px) scale(${zoom})`;
+    }
+
     const rc = rough.canvas(canvas);
     const sorted = [...elements].sort((a, b) => a.zIndex - b.zIndex);
     for (const element of sorted) {
@@ -582,6 +601,7 @@ export function Canvas() {
 
       if (e.button !== 0) return;
       if (contextMenu) setContextMenu(null);
+      setActiveEmbedId(null);
       saveCurrentText();
 
       const { activeTool, selectedIds, setSelectedIds, clearSelection, strokeColor, fillColor, strokeWidth, roughness, opacity, fontSize, strokeStyle, fillStyle, edgeRoundness } = useToolStore.getState();
@@ -667,6 +687,7 @@ export function Canvas() {
                   points: el.points ? el.points.map(p => ({ ...p })) : undefined,
                   text: el.text,
                   textWrap: el.textWrap,
+                  isCode: el.isCode,
                 },
                 elementType: el.type,
               };
@@ -882,24 +903,26 @@ export function Canvas() {
         if (handle.includes('n')) { y += dy; height -= dy; }
 
         if (elementType === 'text' && original.fontSize) {
-          if (original.textWrap && original.text) {
-            const constrainedWidth = Math.max(20, width);
-            const canvas = canvasRef.current;
-            if (canvas) {
-              const ctx = canvas.getContext('2d');
-              if (ctx) {
-                ctx.font = `${original.fontSize}px 'Virgil', 'Segoe Print', 'Comic Sans MS', cursive`;
-                const wrappedLines = wrapTextToLines(original.text, constrainedWidth, ctx);
-                updateElement(elementId, { x, y, width: constrainedWidth, height: wrappedLines.length * Math.round(original.fontSize * 1.3) });
-              } else {
-                updateElement(elementId, { x, y, width: Math.max(20, width), height });
-              }
-            }
-          } else {
+          if (original.isCode) {
+            // Code blocks: scale font size
             const scaleX = original.width > 0 ? width / original.width : 1;
             const scaleY = original.height > 0 ? height / original.height : 1;
             const scale = Math.max(0.1, Math.min(scaleX, scaleY));
             updateElement(elementId, { x, y, width, height, fontSize: Math.max(8, Math.min(200, Math.round(original.fontSize * scale))) });
+          } else {
+            // Regular text: word-wrap to the new width
+            const constrainedWidth = Math.max(20, width);
+            const canvas = canvasRef.current;
+            if (canvas) {
+              const ctx = canvas.getContext('2d');
+              if (ctx && original.text) {
+                ctx.font = `${original.fontSize}px 'Virgil', 'Segoe Print', 'Comic Sans MS', cursive`;
+                const wrappedLines = wrapTextToLines(original.text, constrainedWidth, ctx);
+                updateElement(elementId, { x, y, width: constrainedWidth, height: wrappedLines.length * Math.round(original.fontSize * 1.3), textWrap: true });
+              } else {
+                updateElement(elementId, { x, y, width: constrainedWidth, height: Math.max(20, height) });
+              }
+            }
           }
         } else if ((elementType === 'line' || elementType === 'arrow' || elementType === 'freehand') && original.points) {
           const scaleX = original.width > 0 ? Math.abs(width) / original.width : 1;
@@ -997,12 +1020,35 @@ export function Canvas() {
         connectionSnapRef.current = null;
       }
 
-      if (el.type === 'rectangle' || el.type === 'ellipse' || el.type === 'diamond' || el.type === 'frame') {
+      if (el.type === 'rectangle' || el.type === 'ellipse' || el.type === 'diamond' || el.type === 'frame' || el.type === 'embed') {
         const { elements } = useElementStore.getState();
         const current = elements.find((e) => e.id === el.id);
         if (current) {
           const normalized = normalizeBounds(current.x, current.y, current.width, current.height);
           useElementStore.getState().updateElement(el.id, normalized);
+        }
+      }
+
+      if (el.type === 'embed') {
+        const { elements } = useElementStore.getState();
+        const current = elements.find((e) => e.id === el.id);
+        if (current) {
+          const minW = 200, minH = 150;
+          if (current.width < minW || current.height < minH) {
+            useElementStore.getState().updateElement(el.id, {
+              width: Math.max(current.width, minW),
+              height: Math.max(current.height, minH),
+            });
+          }
+          const { offsetX, offsetY, zoom } = useCanvasStore.getState();
+          const finalW = Math.max(current.width, minW);
+          const finalH = Math.max(current.height, minH);
+          setEmbedUrlEdit({
+            elementId: el.id,
+            value: '',
+            screenX: (current.x + finalW / 2) * zoom + offsetX,
+            screenY: (current.y + finalH / 2) * zoom + offsetY,
+          });
         }
       }
 
@@ -1018,25 +1064,6 @@ export function Canvas() {
           [bindingKey]: { elementId: connectionSnapRef.current.elementId, point: connectionSnapRef.current.point },
         });
         connectionSnapRef.current = null;
-      }
-    } else if (interaction.type === 'resizing' && interaction.elementType === 'text') {
-      const { elements } = useElementStore.getState();
-      const current = elements.find((e) => e.id === interaction.elementId);
-      if (current?.text) {
-        const canvas = canvasRef.current;
-        if (canvas) {
-          const ctx = canvas.getContext('2d');
-          if (ctx) {
-            const fontSize = current.fontSize ?? 40;
-            ctx.font = `${fontSize}px 'Virgil', 'Segoe Print', 'Comic Sans MS', cursive`;
-            const lines = current.text.split('\n');
-            const maxWidth = Math.max(...lines.map((l) => ctx.measureText(l).width));
-            useElementStore.getState().updateElement(interaction.elementId, {
-              width: maxWidth,
-              height: lines.length * Math.round(fontSize * 1.3),
-            });
-          }
-        }
       }
     } else if (interaction.type === 'selecting' && selectionBoxRef.current) {
       const box = selectionBoxRef.current;
@@ -1285,6 +1312,24 @@ export function Canvas() {
       const { elements } = useElementStore.getState();
       const sortedDesc = [...elements].sort((a, b) => b.zIndex - a.zIndex);
 
+      // Embed element → enter interactive mode or show URL input
+      const hitEmbed = sortedDesc.find((el) => el.type === 'embed' && !el.locked && hitTestElement(canvasPoint, el));
+      if (hitEmbed) {
+        e.preventDefault();
+        if (hitEmbed.embedUrl) {
+          setActiveEmbedId(hitEmbed.id);
+        } else {
+          const { offsetX, offsetY, zoom } = useCanvasStore.getState();
+          setEmbedUrlEdit({
+            elementId: hitEmbed.id,
+            value: hitEmbed.embedUrl ?? '',
+            screenX: (hitEmbed.x + hitEmbed.width / 2) * zoom + offsetX,
+            screenY: (hitEmbed.y + hitEmbed.height / 2) * zoom + offsetY,
+          });
+        }
+        return;
+      }
+
       // Text element → edit
       const hitText = sortedDesc.find((el) => el.type === 'text' && !el.locked && hitTestElement(canvasPoint, el));
       if (hitText) {
@@ -1451,6 +1496,9 @@ export function Canvas() {
 
   const { theme } = useCanvasStore();
   const isEmpty = useElementStore((s) => s.elements.length === 0);
+  const allElements = useElementStore((s) => s.elements);
+  const embedElements = allElements.filter((el) => el.type === 'embed');
+  const selectedIds = useToolStore((s) => s.selectedIds);
 
   return (
     <div
@@ -1600,6 +1648,94 @@ export function Canvas() {
             transform: 'translate(-50%, -50%)',
           }}
         />
+      )}
+
+      {/* Embed iframe overlays — positioned with CSS transform synced to canvas */}
+      <div className="absolute inset-0 overflow-hidden" style={{ zIndex: 2, pointerEvents: 'none' }}>
+        <div ref={embedContainerRef} style={{ position: 'absolute', transformOrigin: '0 0' }}>
+          {embedElements.map((el) => {
+            const isActive = activeEmbedId === el.id;
+            const isSelected = selectedIds.includes(el.id);
+            return (
+              <div
+                key={el.id}
+                style={{
+                  position: 'absolute',
+                  left: el.x,
+                  top: el.y,
+                  width: el.width,
+                  height: el.height,
+                  pointerEvents: isActive ? 'all' : 'none',
+                  opacity: el.opacity,
+                  borderRadius: 6,
+                  overflow: 'hidden',
+                  outline: isSelected ? '2px solid #6366f1' : 'none',
+                  outlineOffset: 2,
+                  boxShadow: isActive ? '0 0 0 3px rgba(99,102,241,0.4)' : undefined,
+                }}
+              >
+                {el.embedUrl ? (
+                  <iframe
+                    src={getEmbedUrl(el.embedUrl)}
+                    style={{ width: '100%', height: '100%', border: 'none', display: 'block' }}
+                    sandbox="allow-scripts allow-same-origin allow-presentation allow-forms allow-popups"
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                    allowFullScreen
+                  />
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Embed URL input dialog */}
+      {embedUrlEdit && (
+        <div
+          className="fixed z-[200] flex flex-col gap-2 p-3 rounded-2xl bg-white/98 dark:bg-gray-900/98 backdrop-blur-xl shadow-[0_8px_28px_rgba(0,0,0,0.10)] border border-black/[0.06] dark:border-white/[0.07] w-[320px]"
+          style={{ left: Math.min(embedUrlEdit.screenX - 160, window.innerWidth - 336), top: Math.max(8, embedUrlEdit.screenY - 60) }}
+        >
+          <span className="text-[11px] font-medium text-gray-500 dark:text-gray-400">Embed URL</span>
+          <input
+            autoFocus
+            value={embedUrlEdit.value}
+            onChange={(e) => setEmbedUrlEdit((prev) => prev ? { ...prev, value: e.target.value } : null)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                const url = embedUrlEdit.value.trim();
+                useElementStore.getState().updateElement(embedUrlEdit.elementId, { embedUrl: url || undefined });
+                if (url) setActiveEmbedId(embedUrlEdit.elementId);
+                useToolStore.getState().setSelectedIds([embedUrlEdit.elementId]);
+                setEmbedUrlEdit(null);
+              }
+              if (e.key === 'Escape') {
+                setEmbedUrlEdit(null);
+              }
+            }}
+            placeholder="https://youtube.com/watch?v=... or any URL"
+            className="text-[13px] px-2.5 py-1.5 rounded-lg border border-gray-200 dark:border-white/10 bg-transparent text-gray-800 dark:text-gray-200 outline-none focus:ring-1 focus:ring-indigo-400 w-full"
+          />
+          <div className="flex gap-2">
+            <button
+              onClick={() => {
+                const url = embedUrlEdit.value.trim();
+                useElementStore.getState().updateElement(embedUrlEdit.elementId, { embedUrl: url || undefined });
+                if (url) setActiveEmbedId(embedUrlEdit.elementId);
+                useToolStore.getState().setSelectedIds([embedUrlEdit.elementId]);
+                setEmbedUrlEdit(null);
+              }}
+              className="flex-1 text-[12px] py-1.5 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 transition-colors font-medium"
+            >
+              Embed
+            </button>
+            <button
+              onClick={() => setEmbedUrlEdit(null)}
+              className="text-[12px] py-1.5 px-3 rounded-lg hover:bg-gray-100 dark:hover:bg-white/[0.06] text-gray-600 dark:text-gray-400 transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
       )}
 
       {contextMenu && (

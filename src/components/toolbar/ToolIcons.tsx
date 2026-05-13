@@ -302,6 +302,20 @@ export function DistributeVIcon() {
   );
 }
 
+export function EmbedIcon() {
+  return (
+    <svg className={iconClass} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="2" y="3" width="20" height="14" rx="2" />
+      <circle cx="8" cy="7" r="1" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="7" r="1" fill="currentColor" stroke="none" />
+      <circle cx="16" cy="7" r="1" fill="currentColor" stroke="none" />
+      <line x1="2" y1="10" x2="22" y2="10" />
+      <path d="M7 21h10" />
+      <path d="M12 17v4" />
+    </svg>
+  );
+}
+
 export const TOOL_ICON_MAP: Record<string, () => React.JSX.Element> = {
   cursor: CursorIcon,
   hand: HandIcon,
@@ -313,4 +327,5 @@ export const TOOL_ICON_MAP: Record<string, () => React.JSX.Element> = {
   arrow: ArrowIcon,
   pencil: PencilIcon,
   text: TextIcon,
+  embed: EmbedIcon,
 };
