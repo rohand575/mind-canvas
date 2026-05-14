@@ -5,7 +5,7 @@ import { useElementStore } from '../../store/elementStore';
 import { useToolStore } from '../../store/toolStore';
 import { useCanvasInteraction } from '../../hooks/useCanvasInteraction';
 import { useHistory } from '../../hooks/useHistory';
-import { renderElement } from '../../features/drawing/renderElement';
+import { renderElement, type DrawableCache } from '../../features/drawing/renderElement';
 import { renderGrid } from '../../features/drawing/renderGrid';
 import {
   renderSelection,
@@ -137,6 +137,17 @@ export function Canvas() {
   // Alignment guide state
   const alignmentGuidesRef = useRef<AlignmentGuide[]>([]);
 
+  // E1: per-element rough.js Drawable cache (avoids regenerating on every frame)
+  const drawableCacheRef = useRef<DrawableCache>(new Map());
+
+  // E4: active pointer tracking for pinch zoom
+  const activePointersRef = useRef(new Map<number, { x: number; y: number }>());
+  const lastPinchDistRef = useRef<number | null>(null);
+  const lastPinchMidRef = useRef<{ x: number; y: number } | null>(null);
+
+  // E5: live region for screen reader announcements
+  const liveRegionRef = useRef<HTMLDivElement>(null);
+
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
 
   // Embed iframe overlay
@@ -166,6 +177,34 @@ export function Canvas() {
   const { handleWheel, handleKeyDown, handleKeyUp, startPan, startRightClickPan, movePan, endPan, isSpacePressed } =
     useCanvasInteraction();
   const { saveSnapshot } = useHistory();
+
+  // E2: spawn render worker — pre-generates rough.js Drawables off main thread
+  useEffect(() => {
+    const worker = new Worker(new URL('../../workers/renderWorker.ts', import.meta.url), { type: 'module' });
+    worker.onmessage = (e: MessageEvent<{ requestId: number; results: Record<string, { hash: string; drawables: unknown[] }> }>) => {
+      const { results } = e.data;
+      const cache = drawableCacheRef.current;
+      // Evict stale entries (deleted elements) then merge new drawables
+      const incoming = new Set(Object.keys(results));
+      for (const id of cache.keys()) { if (!incoming.has(id)) cache.delete(id); }
+      for (const [id, entry] of Object.entries(results)) {
+        const cached = cache.get(id);
+        // Only overwrite if hash changed (avoid stomping on identical in-frame entry)
+        if (!cached || cached.hash !== entry.hash) {
+          cache.set(id, entry as import('../../features/drawing/renderElement').DrawableEntry);
+        }
+      }
+    };
+    // Send elements whenever the store changes
+    const unsub = useElementStore.subscribe((state, prev) => {
+      if (state.elements !== prev.elements) {
+        worker.postMessage({ elements: state.elements, requestId: Date.now() });
+      }
+    });
+    // Initial dispatch
+    worker.postMessage({ elements: useElementStore.getState().elements, requestId: 0 });
+    return () => { worker.terminate(); unsub(); };
+  }, []);
 
   // ─── Find helpers ────────────────────────────────────────────
   const computeFindMatches = useCallback((query: string, text: string): number[] => {
@@ -464,11 +503,27 @@ export function Canvas() {
       embedContainerRef.current.style.transform = `translate(${offsetX}px, ${offsetY}px) scale(${zoom})`;
     }
 
+    // Viewport bounds in canvas coordinates (with margin for thick strokes / shadows)
+    const CULL_MARGIN = 64;
+    const viewX = -offsetX / zoom - CULL_MARGIN;
+    const viewY = -offsetY / zoom - CULL_MARGIN;
+    const viewW = w / zoom + CULL_MARGIN * 2;
+    const viewH = h / zoom + CULL_MARGIN * 2;
+
     const rc = rough.canvas(canvas);
     const sorted = [...elements].sort((a, b) => a.zIndex - b.zIndex);
     for (const element of sorted) {
       if (element.id === editingElementIdRef.current) continue;
-      renderElement(rc, ctx, element, { textHighlights: highlightMap.get(element.id), isDark });
+
+      // E1: viewport culling — skip elements entirely outside the visible area
+      const b = getElementBounds(element);
+      if (b.x + b.width < viewX || b.x > viewX + viewW || b.y + b.height < viewY || b.y > viewY + viewH) continue;
+
+      renderElement(rc, ctx, element, {
+        textHighlights: highlightMap.get(element.id),
+        isDark,
+        drawableCache: drawableCacheRef.current,
+      });
     }
 
     // Connection point indicators when drawing arrows
@@ -861,7 +916,7 @@ export function Canvas() {
         const staticElements = elements.filter(el => !movingIds.has(el.id) && !el.locked);
         const movingBounds = [...interaction.originals.entries()].map(([id, orig]) => {
           const el = elements.find(e => e.id === id);
-          if (!el) return { x: orig.x + dx, y: orig.y + dy, width: el?.width ?? 0, height: el?.height ?? 0 };
+          if (!el) return { x: orig.x + dx, y: orig.y + dy, width: 0, height: 0 };
           const b = getElementBounds(el);
           return { x: b.x - el.x + orig.x + dx, y: b.y - el.y + orig.y + dy, width: b.width, height: b.height };
         });
@@ -1494,6 +1549,68 @@ export function Canvas() {
     (textarea as any).__cleanupKeydown = () => textarea.removeEventListener('keydown', handleTextKeydown);
   }, [saveSnapshot, findActive, findQuery, updateEditorOverlay]);
 
+  // E4: pointer event wrappers (pointer events fire for mouse + touch + pen)
+  const handlePointerDown = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
+    // Palm rejection: ignore large-area touch contacts (flat palm, wrist)
+    if (e.pointerType === 'touch' && e.width > 70 && e.height > 70) return;
+
+    activePointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+    if (activePointersRef.current.size >= 2) {
+      // Two-finger gesture → pinch-zoom mode; cancel any active drawing
+      const pts = Array.from(activePointersRef.current.values());
+      lastPinchDistRef.current = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
+      lastPinchMidRef.current = { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 };
+      interactionRef.current = { type: 'none' };
+      endPan();
+      return;
+    }
+
+    // Capture so subsequent moves/ups fire even if pointer leaves the element
+    e.currentTarget.setPointerCapture(e.pointerId);
+    handleMouseDown(e as unknown as React.MouseEvent<HTMLCanvasElement>);
+  }, [handleMouseDown, endPan]);
+
+  const handlePointerMove = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
+    activePointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+
+    if (activePointersRef.current.size >= 2) {
+      const pts = Array.from(activePointersRef.current.values());
+      const dist = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
+      const midX = (pts[0].x + pts[1].x) / 2;
+      const midY = (pts[0].y + pts[1].y) / 2;
+      if (lastPinchDistRef.current !== null && lastPinchMidRef.current) {
+        const scale = dist / lastPinchDistRef.current;
+        const { zoom, setZoom, offsetX, offsetY, setOffset } = useCanvasStore.getState();
+        setZoom(zoom * scale, midX, midY);
+        setOffset(offsetX + midX - lastPinchMidRef.current.x, offsetY + midY - lastPinchMidRef.current.y);
+      }
+      lastPinchDistRef.current = dist;
+      lastPinchMidRef.current = { x: midX, y: midY };
+      return;
+    }
+
+    handleMouseMove(e as unknown as React.MouseEvent<HTMLCanvasElement>);
+  }, [handleMouseMove]);
+
+  const handlePointerUp = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
+    activePointersRef.current.delete(e.pointerId);
+    if (activePointersRef.current.size < 2) {
+      lastPinchDistRef.current = null;
+      lastPinchMidRef.current = null;
+    }
+    handleMouseUp(e as unknown as React.MouseEvent<HTMLCanvasElement>);
+  }, [handleMouseUp]);
+
+  const handlePointerLeave = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
+    activePointersRef.current.delete(e.pointerId);
+    if (activePointersRef.current.size < 2) {
+      lastPinchDistRef.current = null;
+      lastPinchMidRef.current = null;
+    }
+    handleMouseUp(e as unknown as React.MouseEvent<HTMLCanvasElement>);
+  }, [handleMouseUp]);
+
   const { theme } = useCanvasStore();
   const isEmpty = useElementStore((s) => s.elements.length === 0);
   const allElements = useElementStore((s) => s.elements);
@@ -1518,15 +1635,31 @@ export function Canvas() {
         </div>
       )}
 
+      {/* Hidden keyboard-navigation instructions for screen readers */}
+      <p id="canvas-instructions" className="sr-only">
+        Drawing canvas. Use toolbar tools to draw. Tab or Shift+Tab cycles through elements.
+        Arrow keys nudge the selection; Shift+Arrow for larger steps. Delete removes selection.
+        Press ? for all keyboard shortcuts.
+      </p>
+
+      {/* E5: live region for screen-reader announcements (tool changes, etc.) */}
+      <div ref={liveRegionRef} aria-live="polite" aria-atomic="true" className="sr-only" />
+
       <canvas
         ref={canvasRef}
-        className="w-full h-full block"
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp}
+        role="application"
+        aria-label="Drawing canvas"
+        aria-describedby="canvas-instructions"
+        tabIndex={0}
+        className="w-full h-full block focus:outline-none"
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerLeave={handlePointerLeave}
+        onPointerCancel={handlePointerLeave}
         onDoubleClick={handleDoubleClick}
         onContextMenu={(e) => e.preventDefault()}
+        style={{ touchAction: 'none' }}
       />
 
       {findActive && (

@@ -7,7 +7,7 @@ export function ToolSelector() {
   const { activeTool, setActiveTool } = useToolStore();
 
   return (
-    <div className="flex flex-col gap-2">
+    <div role="toolbar" aria-label="Drawing tools" aria-orientation="vertical" className="flex flex-col gap-2">
       {TOOLS.map((tool) => {
         const Icon = TOOL_ICON_MAP[tool.icon];
         return (
@@ -15,6 +15,8 @@ export function ToolSelector() {
             key={tool.id}
             active={activeTool === tool.id}
             title={`${tool.label} (${tool.shortcut})`}
+            aria-label={`${tool.label} tool`}
+            aria-keyshortcuts={tool.shortcut}
             onClick={() => setActiveTool(tool.id)}
           >
             {Icon ? <Icon /> : tool.label[0]}

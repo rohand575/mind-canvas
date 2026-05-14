@@ -20,15 +20,20 @@ export function Toolbar() {
   return (
     <>
       {/* Tools - Left side vertical */}
-      <div className={`absolute left-5 top-1/2 -translate-y-1/2 z-40 flex flex-col gap-2.5 p-5 ${panelClasses}`}>
+      <nav
+        aria-label="Drawing tools"
+        className={`absolute left-5 top-1/2 -translate-y-1/2 z-40 flex flex-col gap-2.5 p-5 ${panelClasses}`}
+      >
         <ToolSelector />
 
         {/* Shape Library button at bottom of tool panel */}
         <div className="h-px w-full bg-gray-950/[0.05] dark:bg-white/[0.06] my-1" />
         <button
           title="Shape Library"
+          aria-label="Shape library"
+          aria-expanded={isOpen}
           onClick={toggleOpen}
-          className={`w-9 h-9 flex items-center justify-center rounded-xl transition-colors duration-100 ${
+          className={`w-9 h-9 flex items-center justify-center rounded-xl transition-colors duration-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/70 focus-visible:ring-offset-2 ${
             isOpen
               ? 'bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400'
               : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/[0.06] hover:text-gray-800 dark:hover:text-gray-200'
@@ -36,18 +41,25 @@ export function Toolbar() {
         >
           <LibraryIcon />
         </button>
-      </div>
+      </nav>
 
       {/* Styles + Align - Top center horizontal */}
-      <div className={`absolute top-5 left-1/2 -translate-x-1/2 z-40 flex items-center px-4 py-2.5 gap-3 ${panelClasses}`}>
+      <div
+        role="toolbar"
+        aria-label="Style and alignment"
+        className={`absolute top-5 left-1/2 -translate-x-1/2 z-40 flex items-center px-4 py-2.5 gap-3 ${panelClasses}`}
+      >
         <StylePanel />
         <AlignBar />
       </div>
 
       {/* Actions - Right side vertical */}
-      <div className={`absolute right-5 top-1/2 -translate-y-1/2 z-40 flex flex-col gap-2.5 p-5 ${panelClasses}`}>
+      <nav
+        aria-label="Canvas actions"
+        className={`absolute right-5 top-1/2 -translate-y-1/2 z-40 flex flex-col gap-2.5 p-5 ${panelClasses}`}
+      >
         <ActionBar />
-      </div>
+      </nav>
 
       {/* Shape Library panel */}
       <ShapeLibrary />

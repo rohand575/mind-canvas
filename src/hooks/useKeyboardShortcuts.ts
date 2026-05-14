@@ -487,6 +487,36 @@ export function useKeyboardShortcuts(onToggleShortcuts?: () => void) {
           return;
         }
       }
+
+      // E5: Arrow keys — nudge selected elements (1px; Shift = 10px)
+      if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key) && selectedIds.length > 0 && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        const step = e.shiftKey ? 10 : 1;
+        const dx = e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0;
+        const dy = e.key === 'ArrowUp' ? -step : e.key === 'ArrowDown' ? step : 0;
+        const { elements, updateElement } = useElementStore.getState();
+        for (const id of selectedIds) {
+          const el = elements.find(el => el.id === id);
+          if (el && !el.locked) updateElement(id, { x: el.x + dx, y: el.y + dy });
+        }
+        return;
+      }
+
+      // E5: Tab — cycle keyboard focus through canvas elements
+      if (e.key === 'Tab' && !e.ctrlKey && !e.metaKey) {
+        e.preventDefault();
+        const { elements } = useElementStore.getState();
+        const interactable = elements.filter(el => !el.locked);
+        if (interactable.length === 0) return;
+        const currentIdx = selectedIds.length === 1
+          ? interactable.findIndex(el => el.id === selectedIds[0])
+          : -1;
+        const nextIdx = e.shiftKey
+          ? (currentIdx - 1 + interactable.length) % interactable.length
+          : (currentIdx + 1) % interactable.length;
+        useToolStore.getState().setSelectedIds([interactable[nextIdx].id]);
+        return;
+      }
     };
 
     window.addEventListener('keydown', handler);

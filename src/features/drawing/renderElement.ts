@@ -1,8 +1,52 @@
+import rough from 'roughjs';
 import type { RoughCanvas } from 'roughjs/bin/canvas';
+import type { Drawable } from 'roughjs/bin/core';
 import type { Options as RoughOptions } from 'roughjs/bin/core';
 import type { CanvasElement } from '../../types';
 import { tokenizeLine, getTokenColor, CODE_THEME_DARK, CODE_FONT, CODE_LINE_HEIGHT, CODE_PADDING, CODE_BORDER_RADIUS } from '../../utils/codeDetection';
 import { wrapTextToLines } from '../../utils/textWrap';
+
+// Module-level generator — stateless, safe to reuse across frames
+const gen = rough.generator();
+
+// ─── Drawable cache ───────────────────────────────────────────────
+export interface DrawableEntry { hash: string; drawables: Drawable[] }
+export type DrawableCache = Map<string, DrawableEntry>;
+
+/** Stable hash of all visual properties that affect rough.js output */
+export function computeElementHash(el: CanvasElement): string {
+  const pts = el.points?.map(p => `${p.x.toFixed(2)},${p.y.toFixed(2)}`).join(';') ?? '';
+  return [
+    el.type, el.x, el.y, el.width, el.height,
+    el.strokeColor, el.fillColor, el.fillStyle ?? '',
+    el.strokeWidth, el.roughness, el.strokeStyle ?? '',
+    el.edgeRoundness ?? 0, el.connectorStyle ?? '',
+    pts,
+  ].join('|');
+}
+
+/** Draw from cache, generating and storing the Drawable on miss. */
+function drawWithCache(
+  rc: RoughCanvas,
+  cache: DrawableCache | undefined,
+  element: CanvasElement,
+  generate: () => Drawable[],
+): void {
+  if (!cache) {
+    for (const d of generate()) rc.draw(d);
+    return;
+  }
+  const hash = computeElementHash(element);
+  const cached = cache.get(element.id);
+  let drawables: Drawable[];
+  if (cached && cached.hash === hash) {
+    drawables = cached.drawables;
+  } else {
+    drawables = generate();
+    cache.set(element.id, { hash, drawables });
+  }
+  for (const d of drawables) rc.draw(d);
+}
 
 const imageCache = new Map<string, HTMLImageElement>();
 
@@ -37,6 +81,7 @@ interface TextHighlightRange {
 interface RenderElementOptions {
   textHighlights?: TextHighlightRange[];
   isDark?: boolean;
+  drawableCache?: DrawableCache;
 }
 
 export function renderElement(
@@ -61,22 +106,16 @@ export function renderElement(
 
   switch (element.type) {
     case 'rectangle': {
-      const r = element.edgeRoundness || 0;
-      if (r > 0) {
-        const x = element.x;
-        const y = element.y;
-        const w = element.width;
-        const h = element.height;
-        const radius = Math.min(r, Math.abs(w) / 2, Math.abs(h) / 2);
-        const path = `M ${x + radius} ${y}
-          L ${x + w - radius} ${y} Q ${x + w} ${y} ${x + w} ${y + radius}
-          L ${x + w} ${y + h - radius} Q ${x + w} ${y + h} ${x + w - radius} ${y + h}
-          L ${x + radius} ${y + h} Q ${x} ${y + h} ${x} ${y + h - radius}
-          L ${x} ${y + radius} Q ${x} ${y} ${x + radius} ${y} Z`;
-        rc.path(path, options);
-      } else {
-        rc.rectangle(element.x, element.y, element.width, element.height, options);
-      }
+      drawWithCache(rc, renderOptions?.drawableCache, element, () => {
+        const r = element.edgeRoundness || 0;
+        if (r > 0) {
+          const x = element.x, y = element.y, w = element.width, h = element.height;
+          const radius = Math.min(r, Math.abs(w) / 2, Math.abs(h) / 2);
+          const path = `M ${x + radius} ${y} L ${x + w - radius} ${y} Q ${x + w} ${y} ${x + w} ${y + radius} L ${x + w} ${y + h - radius} Q ${x + w} ${y + h} ${x + w - radius} ${y + h} L ${x + radius} ${y + h} Q ${x} ${y + h} ${x} ${y + h - radius} L ${x} ${y + radius} Q ${x} ${y} ${x + radius} ${y} Z`;
+          return [gen.path(path, options)];
+        }
+        return [gen.rectangle(element.x, element.y, element.width, element.height, options)];
+      });
       break;
     }
 
@@ -86,27 +125,20 @@ export function renderElement(
     }
 
     case 'diamond': {
-      const cx = element.x + element.width / 2;
-      const cy = element.y + element.height / 2;
-      const hw = element.width / 2;
-      const hh = element.height / 2;
-      rc.polygon([
-        [cx, cy - hh],
-        [cx + hw, cy],
-        [cx, cy + hh],
-        [cx - hw, cy],
-      ], options);
+      drawWithCache(rc, renderOptions?.drawableCache, element, () => {
+        const cx = element.x + element.width / 2;
+        const cy = element.y + element.height / 2;
+        const hw = element.width / 2;
+        const hh = element.height / 2;
+        return [gen.polygon([[cx, cy - hh], [cx + hw, cy], [cx, cy + hh], [cx - hw, cy]], options)];
+      });
       break;
     }
 
     case 'ellipse':
-      rc.ellipse(
-        element.x + element.width / 2,
-        element.y + element.height / 2,
-        element.width,
-        element.height,
-        options,
-      );
+      drawWithCache(rc, renderOptions?.drawableCache, element, () => [
+        gen.ellipse(element.x + element.width / 2, element.y + element.height / 2, element.width, element.height, options),
+      ]);
       break;
 
     case 'line':
@@ -114,15 +146,10 @@ export function renderElement(
         if (element.connectorStyle === 'elbow') {
           renderElbowConnector(rc, ctx, element, options, false);
         } else {
-          const p1 = element.points[0];
-          const p2 = element.points[1];
-          rc.line(
-            p1.x + element.x,
-            p1.y + element.y,
-            p2.x + element.x,
-            p2.y + element.y,
-            options,
-          );
+          drawWithCache(rc, renderOptions?.drawableCache, element, () => {
+            const p1 = element.points![0], p2 = element.points![1];
+            return [gen.line(p1.x + element.x, p1.y + element.y, p2.x + element.x, p2.y + element.y, options)];
+          });
         }
         renderConnectorLabel(ctx, element);
       }
@@ -133,7 +160,19 @@ export function renderElement(
         if (element.connectorStyle === 'elbow') {
           renderElbowConnector(rc, ctx, element, options, true);
         } else {
-          renderStraightArrow(rc, element, options);
+          drawWithCache(rc, renderOptions?.drawableCache, element, () => {
+            const p1 = element.points![0], p2 = element.points![1];
+            const x1 = p1.x + element.x, y1 = p1.y + element.y;
+            const x2 = p2.x + element.x, y2 = p2.y + element.y;
+            const angle = Math.atan2(y2 - y1, x2 - x1);
+            const headLen = 16 + element.strokeWidth * 2;
+            const ha = Math.PI / 6;
+            return [
+              gen.line(x1, y1, x2, y2, options),
+              gen.line(x2, y2, x2 - headLen * Math.cos(angle - ha), y2 - headLen * Math.sin(angle - ha), options),
+              gen.line(x2, y2, x2 - headLen * Math.cos(angle + ha), y2 - headLen * Math.sin(angle + ha), options),
+            ];
+          });
         }
         renderConnectorLabel(ctx, element);
       }
@@ -141,12 +180,9 @@ export function renderElement(
 
     case 'freehand':
       if (element.points && element.points.length > 1) {
-        const pts = element.points.map(
-          (p) => [p.x + element.x, p.y + element.y] as [number, number],
-        );
-        rc.linearPath(pts, {
-          ...options,
-          roughness: 0,
+        drawWithCache(rc, renderOptions?.drawableCache, element, () => {
+          const pts = element.points!.map(p => [p.x + element.x, p.y + element.y] as [number, number]);
+          return [gen.linearPath(pts, { ...options, roughness: 0 })];
         });
       }
       break;
@@ -235,37 +271,11 @@ export function renderElement(
   ctx.restore();
 }
 
-// ─── Straight arrow ──────────────────────────────────────────────
-
-function renderStraightArrow(rc: RoughCanvas, element: CanvasElement, options: RoughOptions) {
-  if (!element.points || element.points.length < 2) return;
-  const p1 = element.points[0];
-  const p2 = element.points[1];
-  const x1 = p1.x + element.x;
-  const y1 = p1.y + element.y;
-  const x2 = p2.x + element.x;
-  const y2 = p2.y + element.y;
-
-  rc.line(x1, y1, x2, y2, options);
-
-  const angle = Math.atan2(y2 - y1, x2 - x1);
-  const headLen = 16 + element.strokeWidth * 2;
-  const headAngle = Math.PI / 6;
-
-  const ax1 = x2 - headLen * Math.cos(angle - headAngle);
-  const ay1 = y2 - headLen * Math.sin(angle - headAngle);
-  const ax2 = x2 - headLen * Math.cos(angle + headAngle);
-  const ay2 = y2 - headLen * Math.sin(angle + headAngle);
-
-  rc.line(x2, y2, ax1, ay1, options);
-  rc.line(x2, y2, ax2, ay2, options);
-}
-
 // ─── Elbow connector ─────────────────────────────────────────────
 
 function renderElbowConnector(
   rc: RoughCanvas,
-  ctx: CanvasRenderingContext2D,
+  _ctx: CanvasRenderingContext2D,
   element: CanvasElement,
   options: RoughOptions,
   withArrowhead: boolean,

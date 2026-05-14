@@ -1,0 +1,27 @@
+{
+  "name": "Mind Canvas",
+  "short_name": "Canvas",
+  "description": "A local-first drawing and diagramming tool",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f8f9fa",
+  "theme_color": "#6366f1",
+  "orientation": "any",
+  "lang": "en",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "type": "image/svg+xml",
+      "sizes": "any",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any"
+    }
+  ],
+  "categories": ["productivity", "graphics"],
+  "screenshots": []
+}
