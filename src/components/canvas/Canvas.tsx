@@ -536,8 +536,12 @@ export function Canvas() {
       renderAlignmentGuides(ctx, alignmentGuidesRef.current, w / zoom, h / zoom);
     }
 
-    // Selection UI
-    const selectedElements = elements.filter((el) => selectedIds.includes(el.id));
+    // Selection UI — hide selection for the container rect while typing inside it,
+    // and for the element currently being edited inline
+    const hiddenDuringEdit = new Set<string>();
+    if (textContainerRef.current) hiddenDuringEdit.add(textContainerRef.current.id);
+    if (editingElementIdRef.current) hiddenDuringEdit.add(editingElementIdRef.current);
+    const selectedElements = elements.filter((el) => selectedIds.includes(el.id) && !hiddenDuringEdit.has(el.id));
     renderSelection(ctx, selectedElements);
 
     if (selectionBoxRef.current) renderSelectionBox(ctx, selectionBoxRef.current);
@@ -815,6 +819,11 @@ export function Canvas() {
         }
       } else if (activeTool === 'text') {
         e.preventDefault();
+        // If already in a text session, blur the textarea first so the current
+        // finishText/finishEdit handler runs and saves before we start a new one.
+        if (interactionRef.current.type === 'text-input') {
+          textInputRef.current?.blur();
+        }
         const sortedDescText = [...elements].sort((a, b) => b.zIndex - a.zIndex);
         const hitText = sortedDescText.find((el) => el.type === 'text' && !el.locked && hitTestElement(canvasPoint, el));
         interactionRef.current = { type: 'text-input' };
@@ -1531,6 +1540,7 @@ export function Canvas() {
       textPositionRef.current = null;
       textContainerRef.current = null;
       isWrappedTextRef.current = false;
+      editingElementIdRef.current = null;
       interactionRef.current = { type: 'none' };
       (textarea as any).__cleanupBlur?.();
       (textarea as any).__cleanupKeydown?.();
@@ -1721,6 +1731,20 @@ export function Canvas() {
           const padding = isCodeEditLocal ? Math.round(32 * currentZoom) : 0;
           ta.style.height = 'auto';
           ta.style.height = ta.scrollHeight + 'px';
+          if (isWrappedTextRef.current) {
+            const container = textContainerRef.current;
+            const position = textPositionRef.current;
+            if (container && position) {
+              const textHeightCanvas = ta.scrollHeight / currentZoom;
+              const textBottom = position.y + textHeightCanvas + TEXT_WRAP_PADDING;
+              const rectBottom = container.y + container.height;
+              if (textBottom > rectBottom) {
+                const newHeight = textBottom - container.y + TEXT_WRAP_PADDING;
+                useElementStore.getState().updateElement(container.id, { height: newHeight });
+                textContainerRef.current = { ...container, height: newHeight };
+              }
+            }
+          }
           if (!isWrappedTextRef.current) {
             const lines = ta.value.split('\n');
             const canvas = canvasRef.current;
