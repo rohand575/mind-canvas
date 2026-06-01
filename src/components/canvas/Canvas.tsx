@@ -1246,6 +1246,22 @@ export function Canvas() {
     }
 
     textarea.value = element.text ?? '';
+    // Normalize height to browser's actual scrollHeight so the first Enter
+    // expands by exactly one line instead of causing a sudden jump.
+    textarea.style.height = 'auto';
+    textarea.style.height = textarea.scrollHeight + 'px';
+    if (!isCode && !element.textWrap) {
+      const initCanvas = canvasRef.current;
+      if (initCanvas) {
+        const initCtx = initCanvas.getContext('2d');
+        if (initCtx) {
+          initCtx.font = `${editFontSize * zoom}px ${fontFamily}`;
+          const initLines = (element.text ?? '').split('\n');
+          const initMaxW = Math.max(20, ...initLines.map(l => initCtx.measureText(l || ' ').width));
+          textarea.style.width = (initMaxW + 20) + 'px';
+        }
+      }
+    }
     textarea.focus();
     setIsCodeEdit(isCode);
     const lang = element.codeLanguage ?? 'code';
