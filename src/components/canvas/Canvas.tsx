@@ -37,6 +37,64 @@ function snapToGridValue(val: number, gridSize: number): number {
   return Math.round(val / gridSize) * gridSize;
 }
 
+// Returns true if the event was handled (caller should stop further processing).
+function handleBulletListKeydown(e: KeyboardEvent, ta: HTMLTextAreaElement): boolean {
+  const { selectionStart: ss, selectionEnd: se, value } = ta;
+
+  if (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
+    const lineStart = value.lastIndexOf('\n', ss - 1) + 1;
+    const currentLine = value.substring(lineStart, ss);
+    const m = currentLine.match(/^(\s*)-\s/);
+    if (!m) return false;
+
+    e.preventDefault();
+    const indent = m[1];
+    const bulletPrefix = indent + '- ';
+    const lineContent = currentLine.slice(bulletPrefix.length);
+
+    if (lineContent.trim() === '' && ss === se) {
+      // Empty bullet — exit list by removing the marker
+      const newVal = value.substring(0, lineStart) + indent + value.substring(lineStart + bulletPrefix.length);
+      ta.value = newVal;
+      ta.setSelectionRange(lineStart + indent.length, lineStart + indent.length);
+    } else {
+      // Continue list on the next line
+      const ins = '\n' + bulletPrefix;
+      const newVal = value.substring(0, ss) + ins + value.substring(se);
+      ta.value = newVal;
+      ta.setSelectionRange(ss + ins.length, ss + ins.length);
+    }
+    ta.dispatchEvent(new Event('input', { bubbles: true }));
+    return true;
+  }
+
+  if (e.key === 'Tab') {
+    e.preventDefault();
+    const lineStart = value.lastIndexOf('\n', ss - 1) + 1;
+    const lineEnd = value.indexOf('\n', ss);
+    const currentLine = value.substring(lineStart, lineEnd === -1 ? value.length : lineEnd);
+    const m = currentLine.match(/^(\s*)-\s/);
+    if (m) {
+      if (e.shiftKey) {
+        if (currentLine.startsWith('  ')) {
+          const newVal = value.substring(0, lineStart) + currentLine.slice(2) + value.substring(lineStart + currentLine.length);
+          ta.value = newVal;
+          ta.setSelectionRange(Math.max(lineStart, ss - 2), Math.max(lineStart, ss - 2));
+          ta.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+      } else {
+        const newVal = value.substring(0, lineStart) + '  ' + value.substring(lineStart);
+        ta.value = newVal;
+        ta.setSelectionRange(ss + 2, ss + 2);
+        ta.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+    }
+    return true;
+  }
+
+  return false;
+}
+
 function snapPoint(p: Point, snap: boolean): Point {
   if (!snap) return p;
   return { x: snapToGridValue(p.x, GRID_SIZE), y: snapToGridValue(p.y, GRID_SIZE) };
@@ -1219,6 +1277,22 @@ export function Canvas() {
 
     isWrappedTextRef.current = element.textWrap ?? false;
 
+    if (element.textWrap) {
+      const { elements: allEls } = useElementStore.getState();
+      const container = [...allEls]
+        .filter(el => el.type === 'rectangle' && el.id !== element.id)
+        .sort((a, b) => b.zIndex - a.zIndex)
+        .find(el =>
+          element.x >= el.x && element.x + element.width <= el.x + el.width &&
+          element.y >= el.y && element.y <= el.y + el.height
+        ) ?? null;
+      textContainerRef.current = container;
+      textPositionRef.current = { x: element.x, y: element.y };
+    } else {
+      textContainerRef.current = null;
+      textPositionRef.current = null;
+    }
+
     textarea.style.display = 'block';
     textarea.style.left = (element.x * zoom + offsetX) + 'px';
     textarea.style.top = (element.y * zoom + offsetY) + 'px';
@@ -1339,6 +1413,17 @@ export function Canvas() {
           }
         }
         useElementStore.getState().updateElement(element.id, updates);
+        if (element.textWrap && updates.height != null) {
+          const container = textContainerRef.current;
+          if (container) {
+            const textBottom = element.y + updates.height + TEXT_WRAP_PADDING;
+            if (textBottom > container.y + container.height) {
+              useElementStore.getState().updateElement(container.id, {
+                height: textBottom - container.y + TEXT_WRAP_PADDING,
+              });
+            }
+          }
+        }
       } else {
         useElementStore.getState().removeElements([element.id]);
       }
@@ -1359,6 +1444,8 @@ export function Canvas() {
       textarea.style.wordBreak = '';
       textarea.style.overflowWrap = '';
       isWrappedTextRef.current = false;
+      textContainerRef.current = null;
+      textPositionRef.current = null;
       editingElementIdRef.current = null;
       interactionRef.current = { type: 'none' };
       setIsCodeEdit(false);
@@ -1381,8 +1468,9 @@ export function Canvas() {
     (textarea as any).__cleanupBlur = () => textarea.removeEventListener('blur', handleBlur);
 
     const handleEditKeydown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { textarea.blur(); useToolStore.getState().clearSelection(); }
-      else if ((e.ctrlKey || e.metaKey) && e.key === 'f') { e.preventDefault(); e.stopPropagation(); openFindBar(); }
+      if (e.key === 'Escape') { textarea.blur(); useToolStore.getState().clearSelection(); return; }
+      if ((e.ctrlKey || e.metaKey) && e.key === 'f') { e.preventDefault(); e.stopPropagation(); openFindBar(); return; }
+      handleBulletListKeydown(e, textarea);
     };
     textarea.addEventListener('keydown', handleEditKeydown);
     (textarea as any).__cleanupKeydown = () => textarea.removeEventListener('keydown', handleEditKeydown);
@@ -1572,7 +1660,8 @@ export function Canvas() {
     (textarea as any).__cleanupBlur = () => textarea.removeEventListener('blur', finishText);
 
     const handleTextKeydown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') { textarea.blur(); useToolStore.getState().clearSelection(); }
+      if (e.key === 'Escape') { textarea.blur(); useToolStore.getState().clearSelection(); return; }
+      handleBulletListKeydown(e, textarea);
     };
     textarea.addEventListener('keydown', handleTextKeydown);
     (textarea as any).__cleanupKeydown = () => textarea.removeEventListener('keydown', handleTextKeydown);
