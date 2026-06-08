@@ -46,7 +46,6 @@ export const DEFAULT_CANVAS_ID = 'default';
 export const TOOLS: { id: Tool; label: string; icon: string; shortcut: string }[] = [
   { id: 'select', label: 'Select', icon: 'cursor', shortcut: 'V' },
   { id: 'hand', label: 'Hand', icon: 'hand', shortcut: 'H' },
-  { id: 'frame', label: 'Frame', icon: 'frame', shortcut: 'F' },
   { id: 'rectangle', label: 'Rectangle', icon: 'square', shortcut: 'R' },
   { id: 'diamond', label: 'Diamond', icon: 'diamond', shortcut: 'D' },
   { id: 'ellipse', label: 'Ellipse', icon: 'circle', shortcut: 'O' },

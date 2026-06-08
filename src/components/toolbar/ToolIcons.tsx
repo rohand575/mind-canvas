@@ -316,6 +316,14 @@ export function EmbedIcon() {
   );
 }
 
+export function SparklesIcon() {
+  return (
+    <svg className={iconClass} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 3l1.88 5.76a1 1 0 0 0 .95.69H21l-4.94 3.59a1 1 0 0 0-.36 1.12L17.58 20 12 16.27 6.42 20l1.88-5.84a1 1 0 0 0-.36-1.12L3 9.45h6.17a1 1 0 0 0 .95-.69L12 3z"/>
+    </svg>
+  );
+}
+
 export const TOOL_ICON_MAP: Record<string, () => React.JSX.Element> = {
   cursor: CursorIcon,
   hand: HandIcon,

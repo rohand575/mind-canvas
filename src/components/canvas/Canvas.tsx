@@ -823,6 +823,9 @@ export function Canvas() {
         // finishText/finishEdit handler runs and saves before we start a new one.
         if (interactionRef.current.type === 'text-input') {
           textInputRef.current?.blur();
+          // Clear the editing ref immediately so the previously-edited element
+          // is never hidden during the new session — blur can fire asynchronously.
+          editingElementIdRef.current = null;
         }
         const sortedDescText = [...elements].sort((a, b) => b.zIndex - a.zIndex);
         const hitText = sortedDescText.find((el) => el.type === 'text' && !el.locked && hitTestElement(canvasPoint, el));

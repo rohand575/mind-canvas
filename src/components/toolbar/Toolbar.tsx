@@ -2,12 +2,12 @@ import { ToolSelector } from './ToolSelector';
 import { StylePanel } from './StylePanel';
 import { ActionBar } from './ActionBar';
 import { AlignBar } from './AlignBar';
-import { LibraryIcon } from './ToolIcons';
-import { useShapeLibraryStore } from '../../store/shapeLibraryStore';
-import { ShapeLibrary } from '../ui/ShapeLibrary';
+import { SparklesIcon } from './ToolIcons';
+import { useAIStore } from '../../store/aiStore';
+import { AIDrawPanel } from '../ai/AIDrawPanel';
 
 export function Toolbar() {
-  const { toggleOpen, isOpen } = useShapeLibraryStore();
+  const { toggleOpen: toggleAI, isOpen: aiOpen } = useAIStore();
 
   const panelClasses = `
     bg-white/98 dark:bg-gray-900/98
@@ -26,20 +26,20 @@ export function Toolbar() {
       >
         <ToolSelector />
 
-        {/* Shape Library button at bottom of tool panel */}
+        {/* AI Draw button */}
         <div className="h-px w-full bg-gray-950/[0.05] dark:bg-white/[0.06] my-1" />
         <button
-          title="Shape Library"
-          aria-label="Shape library"
-          aria-expanded={isOpen}
-          onClick={toggleOpen}
+          title="AI Draw (generate from prompt)"
+          aria-label="AI Draw"
+          aria-expanded={aiOpen}
+          onClick={toggleAI}
           className={`w-9 h-9 flex items-center justify-center rounded-xl transition-colors duration-100 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/70 focus-visible:ring-offset-2 ${
-            isOpen
-              ? 'bg-indigo-100 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400'
+            aiOpen
+              ? 'bg-gradient-to-b from-indigo-500 to-purple-600 text-white shadow-[0_2px_8px_rgba(99,102,241,0.4)]'
               : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/[0.06] hover:text-gray-800 dark:hover:text-gray-200'
           }`}
         >
-          <LibraryIcon />
+          <SparklesIcon />
         </button>
       </nav>
 
@@ -61,8 +61,8 @@ export function Toolbar() {
         <ActionBar />
       </nav>
 
-      {/* Shape Library panel */}
-      <ShapeLibrary />
+      {/* AI Draw panel */}
+      <AIDrawPanel />
     </>
   );
 }
