@@ -1342,7 +1342,9 @@ export function Canvas() {
       selectionBoxRef.current = null;
     }
 
-    interactionRef.current = { type: 'none' };
+    if (interaction.type !== 'text-input') {
+      interactionRef.current = { type: 'none' };
+    }
   }, [endPan]);
 
   // ─── Cursor Management ───────────────────────────────────────
