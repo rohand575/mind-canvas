@@ -3,9 +3,10 @@ import rough from 'roughjs';
 import { useCanvasStore } from '../../store/canvasStore';
 import { useElementStore } from '../../store/elementStore';
 import { useToolStore } from '../../store/toolStore';
+import { useHistoryStore } from '../../store/historyStore';
 import { useCanvasInteraction } from '../../hooks/useCanvasInteraction';
 import { useHistory } from '../../hooks/useHistory';
-import { renderElement, type DrawableCache } from '../../features/drawing/renderElement';
+import { renderElement, setImageLoadCallback, type DrawableCache } from '../../features/drawing/renderElement';
 import { renderGrid } from '../../features/drawing/renderGrid';
 import {
   renderSelection,
@@ -30,6 +31,7 @@ import { GRID_SIZE, CONNECTOR_SNAP_DISTANCE, ALIGNMENT_SNAP_THRESHOLD } from '..
 const TEXT_WRAP_PADDING = 8;
 import { ContextMenu } from './ContextMenu';
 import { FindBar } from './FindBar';
+import { resolveEmbed, sanitizeHyperlink, sanitizeEmbedUrl } from '../../utils/urlSafety';
 import { tokenizeLine, getTokenColor, CODE_THEME_DARK, CODE_FONT } from '../../utils/codeDetection';
 import type { CanvasElement, Point, ResizeHandle, Bounds, AlignmentGuide, ConnectionPoint } from '../../types';
 
@@ -100,22 +102,43 @@ function snapPoint(p: Point, snap: boolean): Point {
   return { x: snapToGridValue(p.x, GRID_SIZE), y: snapToGridValue(p.y, GRID_SIZE) };
 }
 
+// ─── Z-order caches ──────────────────────────────────────────────
+// Hit-testing and rendering sort all elements on every event/frame.
+// Cache both sort orders keyed on the (immutable) elements array identity.
+let zSortInput: CanvasElement[] | null = null;
+let zSortDesc: CanvasElement[] = [];
+let zSortAsc: CanvasElement[] = [];
+
+function refreshZSortCache(elements: CanvasElement[]) {
+  if (elements !== zSortInput) {
+    zSortInput = elements;
+    zSortAsc = [...elements].sort((a, b) => a.zIndex - b.zIndex);
+    zSortDesc = [...elements].sort((a, b) => b.zIndex - a.zIndex);
+  }
+}
+
+function sortedByZDesc(elements: CanvasElement[]): CanvasElement[] {
+  refreshZSortCache(elements);
+  return zSortDesc;
+}
+
+function sortedByZAsc(elements: CanvasElement[]): CanvasElement[] {
+  refreshZSortCache(elements);
+  return zSortAsc;
+}
+
 type InteractionMode =
   | { type: 'none' }
   | { type: 'drawing'; element: CanvasElement }
-  | { type: 'moving'; startX: number; startY: number; originals: Map<string, { x: number; y: number }> }
-  | { type: 'resizing'; elementId: string; handle: ResizeHandle; startX: number; startY: number; original: { x: number; y: number; width: number; height: number; fontSize?: number; points?: Point[]; text?: string; textWrap?: boolean; isCode?: boolean }; elementType: string }
-  | { type: 'editing-point'; elementId: string; pointIndex: number; originalX: number; originalY: number; originalPoints: Point[] }
+  // `snapshotted` defers the undo snapshot to the first actual movement so
+  // that plain clicks (select, handle-grab without drag) don't pollute history.
+  | { type: 'moving'; startX: number; startY: number; originals: Map<string, { x: number; y: number }>; snapshotted: boolean }
+  | { type: 'resizing'; elementId: string; handle: ResizeHandle; startX: number; startY: number; original: { x: number; y: number; width: number; height: number; fontSize?: number; points?: Point[]; text?: string; textWrap?: boolean; isCode?: boolean }; elementType: string; snapshotted: boolean }
+  | { type: 'editing-point'; elementId: string; pointIndex: number; originalX: number; originalY: number; originalPoints: Point[]; snapshotted: boolean }
   | { type: 'selecting'; startX: number; startY: number }
   | { type: 'text-input' };
 
-function getEmbedUrl(url: string): string {
-  const ytMatch = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]+)/);
-  if (ytMatch) return `https://www.youtube.com/embed/${ytMatch[1]}?rel=0&modestbranding=1`;
-  const vimeoMatch = url.match(/vimeo\.com\/(\d+)/);
-  if (vimeoMatch) return `https://player.vimeo.com/video/${vimeoMatch[1]}`;
-  return url;
-}
+// Embed URL → iframe src + per-origin sandbox policy lives in urlSafety.ts
 
 /** Compute alignment guides for elements being moved */
 function computeAlignmentGuides(
@@ -198,6 +221,10 @@ export function Canvas() {
   // E1: per-element rough.js Drawable cache (avoids regenerating on every frame)
   const drawableCacheRef = useRef<DrawableCache>(new Map());
 
+  // Dirty flag: the RAF loop skips all work on frames where nothing changed
+  // (previously it re-rendered the full scene at 60fps even when idle).
+  const needsRenderRef = useRef(true);
+
   // E4: active pointer tracking for pinch zoom
   const activePointersRef = useRef(new Map<number, { x: number; y: number }>());
   const lastPinchDistRef = useRef<number | null>(null);
@@ -252,16 +279,56 @@ export function Canvas() {
           cache.set(id, entry as import('../../features/drawing/renderElement').DrawableEntry);
         }
       }
+      needsRenderRef.current = true;
     };
-    // Send elements whenever the store changes
+
+    // Only send what the worker can actually cache, with only the fields it
+    // reads. Previously the FULL element array — including base64 imageData
+    // the worker never touches — was structured-cloned on every store
+    // commit (potentially MBs per freehand-drawing mousemove).
+    const CACHEABLE = new Set(['rectangle', 'diamond', 'ellipse', 'line', 'arrow', 'freehand']);
+    const toWorkerPayload = (elements: CanvasElement[]) =>
+      elements
+        .filter((el) => CACHEABLE.has(el.type) && el.connectorStyle !== 'elbow')
+        .map((el) => ({
+          id: el.id, type: el.type, x: el.x, y: el.y,
+          width: el.width, height: el.height, points: el.points,
+          strokeColor: el.strokeColor, fillColor: el.fillColor,
+          fillStyle: el.fillStyle, strokeWidth: el.strokeWidth,
+          roughness: el.roughness, strokeStyle: el.strokeStyle,
+          edgeRoundness: el.edgeRoundness, connectorStyle: el.connectorStyle,
+        })) as CanvasElement[];
+
+    // rAF-throttled: bursts of store commits collapse into one postMessage
+    let sendScheduled = false;
+    const scheduleSend = () => {
+      if (sendScheduled) return;
+      sendScheduled = true;
+      requestAnimationFrame(() => {
+        sendScheduled = false;
+        worker.postMessage({
+          elements: toWorkerPayload(useElementStore.getState().elements),
+          requestId: Date.now(),
+        });
+      });
+    };
+
     const unsub = useElementStore.subscribe((state, prev) => {
-      if (state.elements !== prev.elements) {
-        worker.postMessage({ elements: state.elements, requestId: Date.now() });
-      }
+      if (state.elements !== prev.elements) scheduleSend();
     });
     // Initial dispatch
-    worker.postMessage({ elements: useElementStore.getState().elements, requestId: 0 });
+    worker.postMessage({ elements: toWorkerPayload(useElementStore.getState().elements), requestId: 0 });
     return () => { worker.terminate(); unsub(); };
+  }, []);
+
+  // Dirty-flag sources: any store change or image load invalidates the frame
+  useEffect(() => {
+    const markDirty = () => { needsRenderRef.current = true; };
+    const u1 = useElementStore.subscribe(markDirty);
+    const u2 = useCanvasStore.subscribe(markDirty);
+    const u3 = useToolStore.subscribe(markDirty);
+    setImageLoadCallback(markDirty);
+    return () => { u1(); u2(); u3(); setImageLoadCallback(null); };
   }, []);
 
   // ─── Find helpers ────────────────────────────────────────────
@@ -517,6 +584,13 @@ export function Canvas() {
 
   // ─── Render Loop ─────────────────────────────────────────────
   const render = useCallback(() => {
+    // Idle frames are skipped entirely — re-render only when marked dirty
+    if (!needsRenderRef.current) {
+      rafRef.current = requestAnimationFrame(render);
+      return;
+    }
+    needsRenderRef.current = false;
+
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext('2d');
@@ -569,7 +643,7 @@ export function Canvas() {
     const viewH = h / zoom + CULL_MARGIN * 2;
 
     const rc = rough.canvas(canvas);
-    const sorted = [...elements].sort((a, b) => a.zIndex - b.zIndex);
+    const sorted = sortedByZAsc(elements);
     for (const element of sorted) {
       if (element.id === editingElementIdRef.current) continue;
 
@@ -617,9 +691,12 @@ export function Canvas() {
     const resizeObserver = new ResizeObserver(() => {
       canvas.style.width = container.clientWidth + 'px';
       canvas.style.height = container.clientHeight + 'px';
+      needsRenderRef.current = true;
     });
     resizeObserver.observe(container);
 
+    // Re-render once whenever this effect re-runs (find state changed, etc.)
+    needsRenderRef.current = true;
     rafRef.current = requestAnimationFrame(render);
     canvas.addEventListener('wheel', handleWheel, { passive: false });
     window.addEventListener('keydown', handleKeyDown);
@@ -638,6 +715,11 @@ export function Canvas() {
 
   // ─── Save Current Text ───────────────────────────────────────
   const saveCurrentText = useCallback(() => {
+    // If an EXISTING element is being edited (showTextInputForEdit session),
+    // committing is the finishEdit blur listener's job. Creating a new
+    // element here would duplicate the text and leave the original element
+    // permanently hidden (it stays render-skipped via editingElementIdRef).
+    if (editingElementIdRef.current) return;
     const textarea = textInputRef.current;
     const position = textPositionRef.current;
     if (!textarea || textarea.style.display === 'none' || !position) return;
@@ -704,11 +786,12 @@ export function Canvas() {
   // ─── Mouse Down ──────────────────────────────────────────────
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
+      needsRenderRef.current = true;
       if (e.button === 2) {
         e.preventDefault();
         const canvasPoint = screenToCanvas(e.clientX, e.clientY);
         const { elements } = useElementStore.getState();
-        const sortedDesc = [...elements].sort((a, b) => b.zIndex - a.zIndex);
+        const sortedDesc = sortedByZDesc(elements);
         const hitElement = sortedDesc.find((el) => !el.locked && hitTestElement(canvasPoint, el)) ?? null;
         rightClickPendingRef.current = { startX: e.clientX, startY: e.clientY, hitElement };
         startRightClickPan(e.clientX, e.clientY);
@@ -735,10 +818,12 @@ export function Canvas() {
         // Ctrl+click on element with hyperlink → open URL
         const canvasPoint = screenToCanvas(e.clientX, e.clientY);
         const { elements } = useElementStore.getState();
-        const sortedDesc = [...elements].sort((a, b) => b.zIndex - a.zIndex);
+        const sortedDesc = sortedByZDesc(elements);
         const hitEl = sortedDesc.find((el) => !el.locked && hitTestElement(canvasPoint, el));
         if (hitEl?.hyperlink) {
-          window.open(hitEl.hyperlink, '_blank', 'noopener,noreferrer');
+          // Defense in depth: only ever open validated http(s)/mailto URLs
+          const safeUrl = sanitizeHyperlink(hitEl.hyperlink);
+          if (safeUrl) window.open(safeUrl, '_blank', 'noopener,noreferrer');
           return;
         }
 
@@ -767,7 +852,6 @@ export function Canvas() {
           if (el && (el.type === 'line' || el.type === 'arrow') && el.points) {
             const pointIdx = getEndpointHandleAtPoint(canvasPoint, el);
             if (pointIdx !== null) {
-              saveSnapshot();
               interactionRef.current = {
                 type: 'editing-point',
                 elementId: id,
@@ -775,6 +859,7 @@ export function Canvas() {
                 originalX: el.x,
                 originalY: el.y,
                 originalPoints: el.points.map((p) => ({ ...p })),
+                snapshotted: false,
               };
               return;
             }
@@ -787,7 +872,6 @@ export function Canvas() {
           if (el) {
             const handle = getResizeHandleAtPoint(canvasPoint, el);
             if (handle) {
-              saveSnapshot();
               const bounds = getElementBounds(el);
               interactionRef.current = {
                 type: 'resizing',
@@ -807,6 +891,7 @@ export function Canvas() {
                   isCode: el.isCode,
                 },
                 elementType: el.type,
+                snapshotted: false,
               };
               return;
             }
@@ -814,7 +899,7 @@ export function Canvas() {
         }
 
         // Click on element
-        const sortedDesc = [...elements].sort((a, b) => b.zIndex - a.zIndex);
+        const sortedDesc = sortedByZDesc(elements);
         const hitElement = sortedDesc.find((el) => !el.locked && hitTestElement(canvasPoint, el));
 
         if (hitElement) {
@@ -833,11 +918,13 @@ export function Canvas() {
           }
 
           setSelectedIds(idsToSelect);
-          saveSnapshot();
 
           const currentSelected = idsToSelect;
 
           if (e.altKey) {
+            // Alt-drag duplicates immediately, so the snapshot must be taken
+            // now (pre-duplication), not on first move.
+            saveSnapshot();
             const { duplicateElements } = useElementStore.getState();
             const duplicated = duplicateElements(currentSelected, 0, 0);
             const newIds = duplicated.map((d) => d.id);
@@ -846,7 +933,7 @@ export function Canvas() {
             for (const dup of duplicated) {
               originals.set(dup.id, { x: dup.x, y: dup.y });
             }
-            interactionRef.current = { type: 'moving', startX: canvasPoint.x, startY: canvasPoint.y, originals };
+            interactionRef.current = { type: 'moving', startX: canvasPoint.x, startY: canvasPoint.y, originals, snapshotted: true };
           } else {
             const originals = new Map<string, { x: number; y: number }>();
             const finalElements = useElementStore.getState().elements;
@@ -869,7 +956,7 @@ export function Canvas() {
                 }
               }
             }
-            interactionRef.current = { type: 'moving', startX: canvasPoint.x, startY: canvasPoint.y, originals };
+            interactionRef.current = { type: 'moving', startX: canvasPoint.x, startY: canvasPoint.y, originals, snapshotted: false };
           }
         } else {
           if (!e.shiftKey) clearSelection();
@@ -885,7 +972,7 @@ export function Canvas() {
           // is never hidden during the new session — blur can fire asynchronously.
           editingElementIdRef.current = null;
         }
-        const sortedDescText = [...elements].sort((a, b) => b.zIndex - a.zIndex);
+        const sortedDescText = sortedByZDesc(elements);
         const hitText = sortedDescText.find((el) => el.type === 'text' && !el.locked && hitTestElement(canvasPoint, el));
         interactionRef.current = { type: 'text-input' };
         if (hitText) {
@@ -944,6 +1031,9 @@ export function Canvas() {
   // ─── Mouse Move ──────────────────────────────────────────────
   const handleMouseMove = useCallback(
     (e: React.MouseEvent) => {
+      // Interactions can mutate render-relevant refs (selection box,
+      // alignment guides, connector snap) without touching any store.
+      needsRenderRef.current = true;
       if (movePan(e.clientX, e.clientY)) return;
 
       const rawCanvasPoint = screenToCanvas(e.clientX, e.clientY);
@@ -979,6 +1069,11 @@ export function Canvas() {
       } else if (interaction.type === 'moving') {
         const dx = rawCanvasPoint.x - interaction.startX;
         const dy = rawCanvasPoint.y - interaction.startY;
+        // First actual movement → record the pre-move state for undo
+        if (!interaction.snapshotted && (dx !== 0 || dy !== 0)) {
+          saveSnapshot();
+          interaction.snapshotted = true;
+        }
         const { elements } = useElementStore.getState();
 
         // Compute alignment guides against non-moving elements
@@ -1002,15 +1097,19 @@ export function Canvas() {
           if (Math.abs(snapDy) < ALIGNMENT_SNAP_THRESHOLD) finalDy = dy + snapDy;
         }
 
+        // Single batched store commit for the whole selection (1 subscriber
+        // notification per mousemove instead of N)
+        const moveUpdates = new Map<string, Partial<CanvasElement>>();
         const movedShapeIds: string[] = [];
         for (const [id, orig] of interaction.originals) {
           const newPos = snap ? snapPoint({ x: orig.x + finalDx, y: orig.y + finalDy }, snap) : { x: orig.x + finalDx, y: orig.y + finalDy };
-          updateElement(id, { x: newPos.x, y: newPos.y });
+          moveUpdates.set(id, { x: newPos.x, y: newPos.y });
           const el = elements.find(e => e.id === id);
           if (el && el.type !== 'arrow' && el.type !== 'line' && el.type !== 'freehand') {
             movedShapeIds.push(id);
           }
         }
+        useElementStore.getState().updateElements(moveUpdates);
 
         // Update any arrows bound to the moved shapes
         if (movedShapeIds.length > 0) {
@@ -1020,6 +1119,11 @@ export function Canvas() {
         const { elementId, handle, startX, startY, original, elementType } = interaction;
         const dx = canvasPoint.x - startX;
         const dy = canvasPoint.y - startY;
+        // First actual movement → record the pre-resize state for undo
+        if (!interaction.snapshotted && (dx !== 0 || dy !== 0)) {
+          saveSnapshot();
+          interaction.snapshotted = true;
+        }
 
         let { x, y, width, height } = original;
         if (handle.includes('e')) { width += dx; }
@@ -1067,6 +1171,11 @@ export function Canvas() {
         updateConnectorBindings([elementId]);
       } else if (interaction.type === 'editing-point') {
         const { elementId, pointIndex, originalX, originalY, originalPoints } = interaction;
+        // First actual movement → record the pre-edit state for undo
+        if (!interaction.snapshotted) {
+          saveSnapshot();
+          interaction.snapshotted = true;
+        }
         const snapped = snapPoint(rawCanvasPoint, snap);
         let targetX = snapped.x;
         let targetY = snapped.y;
@@ -1107,11 +1216,12 @@ export function Canvas() {
 
       updateCursor(canvasPoint, e);
     },
-    [movePan, screenToCanvas],
+    [movePan, screenToCanvas, saveSnapshot],
   );
 
   // ─── Mouse Up ────────────────────────────────────────────────
   const handleMouseUp = useCallback((e?: React.MouseEvent) => {
+    needsRenderRef.current = true;
     endPan();
     alignmentGuidesRef.current = [];
 
@@ -1136,6 +1246,38 @@ export function Canvas() {
 
     if (interaction.type === 'drawing') {
       const el = interaction.element;
+
+      // Prune degenerate elements left by click-without-drag (0×0 shapes,
+      // single-point lines/arrows): invisible junk that would otherwise be
+      // autosaved and pollute bounds math. Also discard the undo snapshot
+      // pushed at mousedown so undo doesn't appear to be a no-op.
+      // (Embeds are excluded: a click intentionally creates a min-size embed.)
+      if (el.type !== 'embed') {
+        const currentEl = useElementStore.getState().elements.find((e) => e.id === el.id);
+        if (currentEl) {
+          let degenerate = false;
+          if (el.type === 'line' || el.type === 'arrow' || el.type === 'freehand') {
+            const pts = currentEl.points;
+            if (!pts || pts.length < 2) {
+              degenerate = true;
+            } else if (el.type !== 'freehand') {
+              degenerate = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y) < 2;
+            }
+          } else {
+            degenerate = Math.abs(currentEl.width) < 2 && Math.abs(currentEl.height) < 2;
+          }
+          if (degenerate) {
+            useElementStore.getState().removeElements([el.id]);
+            useHistoryStore.getState().popState();
+            connectionSnapRef.current = null;
+            isDrawingArrowRef.current = false;
+            const { lockToolMode } = useToolStore.getState();
+            if (!lockToolMode) useToolStore.getState().setActiveTool('select');
+            interactionRef.current = { type: 'none' };
+            return;
+          }
+        }
+      }
 
       // Set endBinding if snapped to connection point
       if ((el.type === 'arrow' || el.type === 'line') && connectionSnapRef.current) {
@@ -1216,7 +1358,7 @@ export function Canvas() {
     }
     if (activeTool === 'text') {
       const { elements: textElements } = useElementStore.getState();
-      const hovered = [...textElements].sort((a, b) => b.zIndex - a.zIndex).find((el) => el.type === 'text' && hitTestElement(canvasPoint, el));
+      const hovered = sortedByZDesc(textElements).find((el) => el.type === 'text' && hitTestElement(canvasPoint, el));
       canvas.style.cursor = hovered ? 'text' : 'crosshair';
       return;
     }
@@ -1247,7 +1389,7 @@ export function Canvas() {
       }
     }
 
-    const sortedDesc = [...elements].sort((a, b) => b.zIndex - a.zIndex);
+    const sortedDesc = sortedByZDesc(elements);
     const hovered = sortedDesc.find((el) => !el.locked && hitTestElement(canvasPoint, el));
 
     // Show pointer cursor on elements with hyperlinks in select mode
@@ -1266,6 +1408,8 @@ export function Canvas() {
     if (!textarea) return;
 
     editingElementIdRef.current = element.id;
+    // Hide the element on canvas while it's being edited in the textarea
+    needsRenderRef.current = true;
 
     const isCode = element.isCode ?? false;
     const fontFamily = isCode
@@ -1481,7 +1625,7 @@ export function Canvas() {
     (e: React.MouseEvent) => {
       const canvasPoint = screenToCanvas(e.clientX, e.clientY);
       const { elements } = useElementStore.getState();
-      const sortedDesc = [...elements].sort((a, b) => b.zIndex - a.zIndex);
+      const sortedDesc = sortedByZDesc(elements);
 
       // Embed element → enter interactive mode or show URL input
       const hitEmbed = sortedDesc.find((el) => el.type === 'embed' && !el.locked && hitTestElement(canvasPoint, el));
@@ -1939,15 +2083,20 @@ export function Canvas() {
                   boxShadow: isActive ? '0 0 0 3px rgba(99,102,241,0.4)' : undefined,
                 }}
               >
-                {el.embedUrl ? (
-                  <iframe
-                    src={getEmbedUrl(el.embedUrl)}
-                    style={{ width: '100%', height: '100%', border: 'none', display: 'block' }}
-                    sandbox="allow-scripts allow-same-origin allow-presentation allow-forms allow-popups"
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                    allowFullScreen
-                  />
-                ) : null}
+                {(() => {
+                  if (!el.embedUrl) return null;
+                  const embed = resolveEmbed(el.embedUrl);
+                  if (!embed) return null;
+                  return (
+                    <iframe
+                      src={embed.src}
+                      style={{ width: '100%', height: '100%', border: 'none', display: 'block' }}
+                      sandbox={embed.sandbox}
+                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                      allowFullScreen
+                    />
+                  );
+                })()}
               </div>
             );
           })}
@@ -1967,8 +2116,8 @@ export function Canvas() {
             onChange={(e) => setEmbedUrlEdit((prev) => prev ? { ...prev, value: e.target.value } : null)}
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
-                const url = embedUrlEdit.value.trim();
-                useElementStore.getState().updateElement(embedUrlEdit.elementId, { embedUrl: url || undefined });
+                const url = sanitizeEmbedUrl(embedUrlEdit.value) ?? undefined;
+                useElementStore.getState().updateElement(embedUrlEdit.elementId, { embedUrl: url });
                 if (url) setActiveEmbedId(embedUrlEdit.elementId);
                 useToolStore.getState().setSelectedIds([embedUrlEdit.elementId]);
                 setEmbedUrlEdit(null);
@@ -1983,8 +2132,8 @@ export function Canvas() {
           <div className="flex gap-2">
             <button
               onClick={() => {
-                const url = embedUrlEdit.value.trim();
-                useElementStore.getState().updateElement(embedUrlEdit.elementId, { embedUrl: url || undefined });
+                const url = sanitizeEmbedUrl(embedUrlEdit.value) ?? undefined;
+                useElementStore.getState().updateElement(embedUrlEdit.elementId, { embedUrl: url });
                 if (url) setActiveEmbedId(embedUrlEdit.elementId);
                 useToolStore.getState().setSelectedIds([embedUrlEdit.elementId]);
                 setEmbedUrlEdit(null);

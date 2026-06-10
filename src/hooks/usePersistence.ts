@@ -45,4 +45,29 @@ export function usePersistence() {
     });
     return unsub;
   }, [scheduleSave]);
+
+  // Flush pending saves when the app is closed or backgrounded.
+  // The debounced autosave leaves up to AUTOSAVE_DEBOUNCE_MS of work
+  // unsaved; visibilitychange/beforeunload close that window.
+  useEffect(() => {
+    const flush = () => {
+      if (!isLoadedRef.current) return;
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+      }
+      // Fire-and-forget: IndexedDB writes started here are best-effort
+      // completed by the browser even as the page unloads.
+      useDocumentStore.getState().saveCurrentCanvas().catch(console.error);
+    };
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') flush();
+    };
+    window.addEventListener('beforeunload', flush);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      window.removeEventListener('beforeunload', flush);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, []);
 }

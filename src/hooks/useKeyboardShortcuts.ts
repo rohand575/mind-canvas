@@ -9,6 +9,7 @@ import { COLOR_PALETTE, FONT_SIZES } from '../constants';
 import type { Tool } from '../types';
 import { useHistory } from './useHistory';
 import { detectCode, CODE_FONT, CODE_FONT_SIZE, CODE_LINE_HEIGHT, CODE_PADDING } from '../utils/codeDetection';
+import { sanitizeElements, cloneElementsForPaste } from '../utils/sanitizeElements';
 
 const KEY_TOOL_MAP: Record<string, Tool> = {
   v: 'select',
@@ -83,70 +84,41 @@ export async function pasteFromClipboard() {
     }
 
     // No image found — fall back to text
-    const text = await navigator.clipboard.readText();
-    if (!text) return;
-
-    // Try parsing as canvas clipboard data
-    try {
-      const data = JSON.parse(text);
-      if (data?.type === 'canvas-clipboard' && Array.isArray(data.elements)) {
-        useHistoryStore.getState().pushState(useElementStore.getState().elements);
-        let maxZ = useElementStore.getState().getMaxZIndex();
-        const newIds: string[] = [];
-        for (const el of data.elements) {
-          maxZ++;
-          const newId = crypto.randomUUID();
-          newIds.push(newId);
-          useElementStore.getState().addElement({
-            ...el,
-            id: newId,
-            x: el.x + 20,
-            y: el.y + 20,
-            zIndex: maxZ,
-            createdAt: Date.now(),
-            updatedAt: Date.now(),
-          });
-        }
-        useToolStore.getState().setSelectedIds(newIds);
-        return;
-      }
-    } catch { /* not JSON — treat as plain text */ }
-
-    // Paste as text or code element on the canvas
-    pasteTextOrCode(text);
+    await pasteText();
   } catch {
     // Clipboard API not available or permission denied — try text-only fallback
     try {
-      const text = await navigator.clipboard.readText();
-      if (!text) return;
-      try {
-        const data = JSON.parse(text);
-        if (data?.type === 'canvas-clipboard' && Array.isArray(data.elements)) {
-          useHistoryStore.getState().pushState(useElementStore.getState().elements);
-          let maxZ = useElementStore.getState().getMaxZIndex();
-          const newIds: string[] = [];
-          for (const el of data.elements) {
-            maxZ++;
-            const newId = crypto.randomUUID();
-            newIds.push(newId);
-            useElementStore.getState().addElement({
-              ...el,
-              id: newId,
-              x: el.x + 20,
-              y: el.y + 20,
-              zIndex: maxZ,
-              createdAt: Date.now(),
-              updatedAt: Date.now(),
-            });
-          }
-          useToolStore.getState().setSelectedIds(newIds);
-          return;
-        }
-      } catch { /* not JSON */ }
-
-      pasteTextOrCode(text);
+      await pasteText();
     } catch { /* clipboard not available */ }
   }
+}
+
+/** Paste plain text: canvas-clipboard JSON, code, or regular text. */
+async function pasteText() {
+  const text = await navigator.clipboard.readText();
+  if (!text) return;
+
+  // Try parsing as canvas clipboard data
+  try {
+    const data = JSON.parse(text);
+    if (data?.type === 'canvas-clipboard' && Array.isArray(data.elements)) {
+      // Validate untrusted clipboard data, then clone with fresh ids,
+      // remapped group ids, and remapped/cleared connector bindings.
+      const sanitized = sanitizeElements(data.elements);
+      if (sanitized.length === 0) return;
+      useHistoryStore.getState().pushState(useElementStore.getState().elements);
+      const startZ = useElementStore.getState().getMaxZIndex();
+      const cloned = cloneElementsForPaste(sanitized, 20, 20, startZ);
+      for (const el of cloned) {
+        useElementStore.getState().addElement(el);
+      }
+      useToolStore.getState().setSelectedIds(cloned.map((el) => el.id));
+      return;
+    }
+  } catch { /* not JSON — treat as plain text */ }
+
+  // Paste as text or code element on the canvas
+  pasteTextOrCode(text);
 }
 
 /**
@@ -219,6 +191,10 @@ function pasteTextOrCode(text: string) {
   }
 }
 
+// Coalesce arrow-key nudge snapshots: a burst of nudges = one undo step.
+let lastNudgeAt = 0;
+const NUDGE_SNAPSHOT_GAP_MS = 600;
+
 /**
  * Global keyboard shortcuts handler
  */
@@ -235,6 +211,10 @@ export function useKeyboardShortcuts(onToggleShortcuts?: () => void) {
 
       const { activeTool, setActiveTool, selectedIds, clearSelection } = useToolStore.getState();
       const { removeElements, duplicateElements, groupElements, ungroupElements, lockElements } = useElementStore.getState();
+
+      // Push an undo snapshot of the current element state
+      const snapshot = () =>
+        useHistoryStore.getState().pushState(useElementStore.getState().elements);
 
       // ? key: toggle keyboard shortcuts dialog
       if (e.key === '?' && !e.ctrlKey && !e.metaKey) {
@@ -259,8 +239,11 @@ export function useKeyboardShortcuts(onToggleShortcuts?: () => void) {
           const color = solidColors[colorIndex];
           const { setStrokeColor } = useToolStore.getState();
           setStrokeColor(color);
-          const { updateElement } = useElementStore.getState();
-          for (const id of selectedIds) updateElement(id, { strokeColor: color });
+          if (selectedIds.length > 0) {
+            snapshot();
+            const { updateElement } = useElementStore.getState();
+            for (const id of selectedIds) updateElement(id, { strokeColor: color });
+          }
           return;
         }
       }
@@ -271,8 +254,11 @@ export function useKeyboardShortcuts(onToggleShortcuts?: () => void) {
           e.preventDefault();
           const { setFillColor } = useToolStore.getState();
           setFillColor('transparent');
-          const { updateElement } = useElementStore.getState();
-          for (const id of selectedIds) updateElement(id, { fillColor: 'transparent' });
+          if (selectedIds.length > 0) {
+            snapshot();
+            const { updateElement } = useElementStore.getState();
+            for (const id of selectedIds) updateElement(id, { fillColor: 'transparent' });
+          }
           return;
         }
         const fillIndex = parseInt(e.key, 10) - 1;
@@ -281,8 +267,11 @@ export function useKeyboardShortcuts(onToggleShortcuts?: () => void) {
           const color = solidColors[fillIndex];
           const { setFillColor } = useToolStore.getState();
           setFillColor(color);
-          const { updateElement } = useElementStore.getState();
-          for (const id of selectedIds) updateElement(id, { fillColor: color });
+          if (selectedIds.length > 0) {
+            snapshot();
+            const { updateElement } = useElementStore.getState();
+            for (const id of selectedIds) updateElement(id, { fillColor: color });
+          }
           return;
         }
       }
@@ -295,8 +284,11 @@ export function useKeyboardShortcuts(onToggleShortcuts?: () => void) {
         const newIdx = idx > 0 ? idx - 1 : 0;
         const newSize = FONT_SIZES[newIdx];
         setFontSize(newSize);
-        const { updateElement } = useElementStore.getState();
-        for (const id of selectedIds) updateElement(id, { fontSize: newSize });
+        if (selectedIds.length > 0) {
+          snapshot();
+          const { updateElement } = useElementStore.getState();
+          for (const id of selectedIds) updateElement(id, { fontSize: newSize });
+        }
         return;
       }
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === '>' || e.key === '.')) {
@@ -306,13 +298,17 @@ export function useKeyboardShortcuts(onToggleShortcuts?: () => void) {
         const newIdx = idx < FONT_SIZES.length - 1 ? idx + 1 : FONT_SIZES.length - 1;
         const newSize = FONT_SIZES[newIdx];
         setFontSize(newSize);
-        const { updateElement } = useElementStore.getState();
-        for (const id of selectedIds) updateElement(id, { fontSize: newSize });
+        if (selectedIds.length > 0) {
+          snapshot();
+          const { updateElement } = useElementStore.getState();
+          for (const id of selectedIds) updateElement(id, { fontSize: newSize });
+        }
         return;
       }
 
       // Delete selected elements
       if ((e.key === 'Delete' || e.key === 'Backspace') && selectedIds.length > 0) {
+        snapshot();
         removeElements(selectedIds);
         clearSelection();
         return;
@@ -328,15 +324,16 @@ export function useKeyboardShortcuts(onToggleShortcuts?: () => void) {
         return;
       }
 
-      // Ctrl+Z: Undo
-      if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+      // Ctrl+Z: Undo / Ctrl+Shift+Z or Ctrl+Y: Redo
+      // Compare case-insensitively: with CapsLock on, Ctrl+Z reports key 'Z'
+      // and would otherwise trigger redo instead of undo.
+      const lowerKey = e.key.toLowerCase();
+      if ((e.ctrlKey || e.metaKey) && lowerKey === 'z' && !e.shiftKey) {
         e.preventDefault();
         undo();
         return;
       }
-
-      // Ctrl+Shift+Z or Ctrl+Y: Redo
-      if ((e.ctrlKey || e.metaKey) && (e.key === 'Z' || e.key === 'y')) {
+      if ((e.ctrlKey || e.metaKey) && ((lowerKey === 'z' && e.shiftKey) || lowerKey === 'y')) {
         e.preventDefault();
         redo();
         return;
@@ -365,6 +362,7 @@ export function useKeyboardShortcuts(onToggleShortcuts?: () => void) {
       if ((e.ctrlKey || e.metaKey) && e.key === 'd') {
         e.preventDefault();
         if (selectedIds.length > 0) {
+          snapshot();
           const duped = duplicateElements(selectedIds);
           useToolStore.getState().setSelectedIds(duped.map((el) => el.id));
         }
@@ -432,6 +430,7 @@ export function useKeyboardShortcuts(onToggleShortcuts?: () => void) {
       if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key === 'g') {
         e.preventDefault();
         if (selectedIds.length >= 2) {
+          snapshot();
           groupElements(selectedIds);
         }
         return;
@@ -450,7 +449,10 @@ export function useKeyboardShortcuts(onToggleShortcuts?: () => void) {
           const idsToUngroup = elements
             .filter(el => el.groupId && groupIds.has(el.groupId))
             .map(el => el.id);
-          if (idsToUngroup.length > 0) ungroupElements(idsToUngroup);
+          if (idsToUngroup.length > 0) {
+            snapshot();
+            ungroupElements(idsToUngroup);
+          }
         }
         return;
       }
@@ -463,6 +465,7 @@ export function useKeyboardShortcuts(onToggleShortcuts?: () => void) {
           const allLocked = elements
             .filter(el => selectedIds.includes(el.id))
             .every(el => el.locked);
+          snapshot();
           lockElements(selectedIds, !allLocked);
           if (!allLocked) clearSelection();
         }
@@ -477,12 +480,14 @@ export function useKeyboardShortcuts(onToggleShortcuts?: () => void) {
         // Ctrl+]: Bring forward, Ctrl+Shift+]: Bring to front
         if (e.key === ']') {
           e.preventDefault();
+          snapshot();
           if (e.shiftKey) bringToFront(id); else bringForward(id);
           return;
         }
         // Ctrl+[: Send backward, Ctrl+Shift+[: Send to back
         if (e.key === '[') {
           e.preventDefault();
+          snapshot();
           if (e.shiftKey) sendToBack(id); else sendBackward(id);
           return;
         }
@@ -491,14 +496,28 @@ export function useKeyboardShortcuts(onToggleShortcuts?: () => void) {
       // E5: Arrow keys — nudge selected elements (1px; Shift = 10px)
       if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key) && selectedIds.length > 0 && !e.ctrlKey && !e.metaKey) {
         e.preventDefault();
+        // One undo snapshot per burst of nudges, not one per keypress
+        const nudgeNow = Date.now();
+        if (nudgeNow - lastNudgeAt > NUDGE_SNAPSHOT_GAP_MS) snapshot();
+        lastNudgeAt = nudgeNow;
         const step = e.shiftKey ? 10 : 1;
         const dx = e.key === 'ArrowLeft' ? -step : e.key === 'ArrowRight' ? step : 0;
         const dy = e.key === 'ArrowUp' ? -step : e.key === 'ArrowDown' ? step : 0;
-        const { elements, updateElement } = useElementStore.getState();
+        const { elements, updateElements, updateConnectorBindings } = useElementStore.getState();
+        const nudgeUpdates = new Map<string, { x: number; y: number }>();
+        const movedShapeIds: string[] = [];
         for (const id of selectedIds) {
           const el = elements.find(el => el.id === id);
-          if (el && !el.locked) updateElement(id, { x: el.x + dx, y: el.y + dy });
+          if (el && !el.locked) {
+            nudgeUpdates.set(id, { x: el.x + dx, y: el.y + dy });
+            if (el.type !== 'arrow' && el.type !== 'line' && el.type !== 'freehand') {
+              movedShapeIds.push(id);
+            }
+          }
         }
+        updateElements(nudgeUpdates);
+        // Keep bound connectors attached when nudging shapes
+        if (movedShapeIds.length > 0) updateConnectorBindings(movedShapeIds);
         return;
       }
 

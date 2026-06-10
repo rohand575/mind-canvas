@@ -4,6 +4,7 @@ import { useElementStore } from '../../store/elementStore';
 import { useShapeLibraryStore } from '../../store/shapeLibraryStore';
 import { useHistory } from '../../hooks/useHistory';
 import { pasteFromClipboard } from '../../hooks/useKeyboardShortcuts';
+import { sanitizeHyperlink, sanitizeEmbedUrl } from '../../utils/urlSafety';
 
 interface ContextMenuProps {
   x: number;
@@ -98,10 +99,10 @@ export function ContextMenu({ x, y, onClose }: ContextMenuProps) {
     onClose();
   };
 
-  const handleBringForward = () => { if (singleSelected) useElementStore.getState().bringForward(singleSelected); onClose(); };
-  const handleSendBackward = () => { if (singleSelected) useElementStore.getState().sendBackward(singleSelected); onClose(); };
-  const handleBringToFront = () => { if (singleSelected) useElementStore.getState().bringToFront(singleSelected); onClose(); };
-  const handleSendToBack = () => { if (singleSelected) useElementStore.getState().sendToBack(singleSelected); onClose(); };
+  const handleBringForward = () => { if (singleSelected) { saveSnapshot(); useElementStore.getState().bringForward(singleSelected); } onClose(); };
+  const handleSendBackward = () => { if (singleSelected) { saveSnapshot(); useElementStore.getState().sendBackward(singleSelected); } onClose(); };
+  const handleBringToFront = () => { if (singleSelected) { saveSnapshot(); useElementStore.getState().bringToFront(singleSelected); } onClose(); };
+  const handleSendToBack = () => { if (singleSelected) { saveSnapshot(); useElementStore.getState().sendToBack(singleSelected); } onClose(); };
 
   const handleToggleLock = () => {
     saveSnapshot();
@@ -130,7 +131,8 @@ export function ContextMenu({ x, y, onClose }: ContextMenuProps) {
 
   const handleHyperlinkOpen = () => {
     if (singleElement?.hyperlink) {
-      window.open(singleElement.hyperlink, '_blank', 'noopener,noreferrer');
+      const safeUrl = sanitizeHyperlink(singleElement.hyperlink);
+      if (safeUrl) window.open(safeUrl, '_blank', 'noopener,noreferrer');
     }
     onClose();
   };
@@ -142,9 +144,11 @@ export function ContextMenu({ x, y, onClose }: ContextMenuProps) {
 
   const handleSaveLink = () => {
     if (singleSelected) {
-      const url = hyperlinkValue.trim();
+      // Reject javascript:/data:/file: etc. — only http(s)/mailto are stored
+      const url = sanitizeHyperlink(hyperlinkValue) ?? undefined;
+      saveSnapshot();
       useElementStore.getState().updateElement(singleSelected, {
-        hyperlink: url || undefined,
+        hyperlink: url,
       });
     }
     onClose();
@@ -152,6 +156,7 @@ export function ContextMenu({ x, y, onClose }: ContextMenuProps) {
 
   const handleRemoveLink = () => {
     if (singleSelected) {
+      saveSnapshot();
       useElementStore.getState().updateElement(singleSelected, { hyperlink: undefined });
     }
     onClose();
@@ -164,8 +169,9 @@ export function ContextMenu({ x, y, onClose }: ContextMenuProps) {
 
   const handleSaveEmbedUrl = () => {
     if (singleSelected) {
-      const url = embedUrlValue.trim();
-      useElementStore.getState().updateElement(singleSelected, { embedUrl: url || undefined });
+      const url = sanitizeEmbedUrl(embedUrlValue) ?? undefined;
+      saveSnapshot();
+      useElementStore.getState().updateElement(singleSelected, { embedUrl: url });
     }
     onClose();
   };
@@ -173,6 +179,7 @@ export function ContextMenu({ x, y, onClose }: ContextMenuProps) {
   const handleToggleElbow = () => {
     if (!singleElement) return;
     const newStyle = singleElement.connectorStyle === 'elbow' ? 'straight' : 'elbow';
+    saveSnapshot();
     useElementStore.getState().updateElement(singleElement.id, { connectorStyle: newStyle });
     onClose();
   };

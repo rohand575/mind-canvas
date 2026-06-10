@@ -3,6 +3,7 @@ import type { CanvasElement } from '../types';
 import { renderElement } from '../features/drawing/renderElement';
 import { renderElementSVG } from '../features/drawing/renderElementSVG';
 import { getElementBounds } from './geometry';
+import { sanitizeElements } from './sanitizeElements';
 
 interface ProjectFile {
   version: number;
@@ -14,6 +15,17 @@ interface ProjectFile {
     theme?: 'light' | 'dark';
     showGrid?: boolean;
   };
+}
+
+// Max total pixels for raster exports (≈ a 16k × 16k canvas / 4).
+const MAX_EXPORT_PIXELS = 64_000_000;
+
+/** 2x when it fits the pixel budget, gracefully degrading toward 1x (or below for enormous scenes). */
+function exportScale(width: number, height: number): number {
+  const base = 2;
+  const pixels = width * height * base * base;
+  if (pixels <= MAX_EXPORT_PIXELS) return base;
+  return Math.max(0.25, Math.sqrt(MAX_EXPORT_PIXELS / (width * height)));
 }
 
 /**
@@ -36,10 +48,15 @@ export function exportAsPNG(
   const width = maxX - minX + padding * 2;
   const height = maxY - minY + padding * 2;
 
+  // Export at 2x for crisp images, but stay within a safe pixel budget
+  // (huge canvases would silently fail toBlob otherwise).
+  const scale = exportScale(width, height);
+
   const canvas = document.createElement('canvas');
-  canvas.width = width;
-  canvas.height = height;
+  canvas.width = Math.round(width * scale);
+  canvas.height = Math.round(height * scale);
   const ctx = canvas.getContext('2d')!;
+  ctx.scale(scale, scale);
 
   // Background
   ctx.fillStyle = isDark ? '#1a1a2e' : '#ffffff';
@@ -82,16 +99,15 @@ export function exportAsJSON(elements: CanvasElement[]): void {
 
 /**
  * Import elements from a JSON string. Returns the elements array or null if invalid.
+ * Elements are schema-validated: malformed entries are dropped rather than
+ * letting NaN/garbage values corrupt the canvas (and then the autosave).
  */
 export function importFromJSON(jsonString: string): CanvasElement[] | null {
   try {
     const data = JSON.parse(jsonString);
     if (!data || !Array.isArray(data.elements)) return null;
-    // Basic validation: every element must have an id and type
-    for (const el of data.elements) {
-      if (typeof el.id !== 'string' || typeof el.type !== 'string') return null;
-    }
-    return data.elements as CanvasElement[];
+    const sanitized = sanitizeElements(data.elements);
+    return sanitized.length > 0 || data.elements.length === 0 ? sanitized : null;
   } catch {
     return null;
   }
@@ -169,10 +185,13 @@ export async function copyCanvasToClipboard(
   const width = maxX - minX + padding * 2;
   const height = maxY - minY + padding * 2;
 
+  const scale = exportScale(width, height);
+
   const canvas = document.createElement('canvas');
-  canvas.width = width;
-  canvas.height = height;
+  canvas.width = Math.round(width * scale);
+  canvas.height = Math.round(height * scale);
   const ctx = canvas.getContext('2d')!;
+  ctx.scale(scale, scale);
 
   ctx.fillStyle = isDark ? '#1a1a2e' : '#ffffff';
   ctx.fillRect(0, 0, width, height);
@@ -232,14 +251,20 @@ export function importProjectFile(jsonString: string): {
   try {
     const data = JSON.parse(jsonString) as ProjectFile;
     if (!data || !Array.isArray(data.elements)) return null;
-    // Basic validation
-    for (const el of data.elements) {
-      if (typeof el.id !== 'string' || typeof el.type !== 'string') return null;
+    const elements = sanitizeElements(data.elements);
+
+    // Validate canvas state numerics — NaN offsets/zoom break all rendering
+    let canvasState = data.canvasState;
+    if (canvasState) {
+      const valid =
+        Number.isFinite(canvasState.offsetX) &&
+        Number.isFinite(canvasState.offsetY) &&
+        Number.isFinite(canvasState.zoom) &&
+        canvasState.zoom > 0;
+      if (!valid) canvasState = undefined;
     }
-    return {
-      elements: data.elements,
-      canvasState: data.canvasState,
-    };
+
+    return { elements, canvasState };
   } catch {
     return null;
   }

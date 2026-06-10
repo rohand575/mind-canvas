@@ -3,11 +3,12 @@ import { useAIStore } from '../../store/aiStore';
 import { useElementStore } from '../../store/elementStore';
 import { useCanvasStore } from '../../store/canvasStore';
 import { useHistoryStore } from '../../store/historyStore';
-import { generateDrawing } from '../../utils/aiDrawService';
+import { generateDrawing, type AIMode } from '../../utils/aiDrawService';
 import { getElementBounds } from '../../utils/geometry';
 
 export function AIDrawPanel() {
   const { isOpen, setOpen, apiKey, setApiKey } = useAIStore();
+  const [mode, setMode] = useState<AIMode>('draw');
   const [prompt, setPrompt] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -41,6 +42,7 @@ export function AIDrawPanel() {
       setError(null);
       setShowKeySection(false);
       setShowKey(false);
+      setPrompt('');
     }
   }, [isOpen, hasKey]);
 
@@ -63,7 +65,7 @@ export function AIDrawPanel() {
       const cy = (window.innerHeight / 2 - offsetY) / zoom;
       const startZ = useElementStore.getState().getMaxZIndex() + 1;
 
-      const newElements = await generateDrawing(prompt, apiKey, cx, cy, startZ);
+      const newElements = await generateDrawing(prompt, apiKey, cx, cy, startZ, mode);
 
       useHistoryStore.getState().pushState(useElementStore.getState().elements);
       useElementStore.getState().setElements([
@@ -94,12 +96,20 @@ export function AIDrawPanel() {
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      handleGenerate();
-    }
     if (e.key === 'Escape') {
       setOpen(false);
+      return;
+    }
+    if (mode === 'diagram') {
+      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        handleGenerate();
+      }
+    } else {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        handleGenerate();
+      }
     }
   };
 
@@ -107,7 +117,7 @@ export function AIDrawPanel() {
 
   const panelClasses = `
     absolute bottom-6 left-1/2 -translate-x-1/2 z-50
-    w-[520px] max-w-[calc(100vw-2.5rem)]
+    ${mode === 'diagram' ? 'w-[640px]' : 'w-[520px]'} max-w-[calc(100vw-2.5rem)]
     bg-white/[0.98] dark:bg-gray-900/[0.98]
     backdrop-blur-xl
     rounded-2xl
@@ -115,6 +125,7 @@ export function AIDrawPanel() {
     dark:shadow-[0_16px_48px_rgba(0,0,0,0.6),0_4px_12px_rgba(0,0,0,0.3)]
     border border-black/[0.06] dark:border-white/[0.07]
     overflow-hidden
+    transition-all duration-200
   `;
 
   return (
@@ -147,6 +158,41 @@ export function AIDrawPanel() {
             <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           </button>
         </div>
+      </div>
+
+      {/* Mode toggle */}
+      <div className="flex items-center gap-1 px-4 py-2 border-b border-black/[0.05] dark:border-white/[0.06] bg-gray-50/60 dark:bg-white/[0.02]">
+        <button
+          onClick={() => { setMode('draw'); setError(null); }}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-medium transition-colors ${
+            mode === 'draw'
+              ? 'bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 shadow-sm border border-black/[0.06] dark:border-white/[0.1]'
+              : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+          }`}
+        >
+          <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.586 7.586"/><circle cx="11" cy="11" r="2"/>
+          </svg>
+          Draw
+        </button>
+        <button
+          onClick={() => { setMode('diagram'); setError(null); }}
+          className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-medium transition-colors ${
+            mode === 'diagram'
+              ? 'bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 shadow-sm border border-black/[0.06] dark:border-white/[0.1]'
+              : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300'
+          }`}
+        >
+          <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="3" width="7" height="5" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="8" y="16" width="8" height="5" rx="1"/><line x1="6.5" y1="8" x2="6.5" y2="12"/><line x1="17.5" y1="8" x2="17.5" y2="12"/><line x1="6.5" y1="12" x2="17.5" y2="12"/><line x1="12" y1="12" x2="12" y2="16"/>
+          </svg>
+          Diagram
+        </button>
+        {mode === 'diagram' && (
+          <span className="ml-2 text-[11px] text-indigo-500 dark:text-indigo-400">
+            Paste any text — logic, rules, or process
+          </span>
+        )}
       </div>
 
       {/* API key section */}
@@ -200,10 +246,13 @@ export function AIDrawPanel() {
             value={prompt}
             onChange={(e) => setPrompt(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={`Describe what to draw… e.g. "a house with a door and two windows"`}
-            rows={2}
+            placeholder={mode === 'diagram'
+              ? 'Paste your rules, logic, or process description here…\nGPT-4o will analyze it and generate a flowchart or infographic.'
+              : 'Describe what to draw… e.g. "a house with a door and two windows"'
+            }
+            rows={mode === 'diagram' ? 8 : 2}
             disabled={loading}
-            className="w-full resize-none rounded-xl px-3 py-2.5 text-[13px] bg-gray-50 dark:bg-white/[0.04] border border-gray-200 dark:border-white/[0.08] text-gray-800 dark:text-gray-200 placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition disabled:opacity-60"
+            className="w-full resize-y rounded-xl px-3 py-2.5 text-[13px] bg-gray-50 dark:bg-white/[0.04] border border-gray-200 dark:border-white/[0.08] text-gray-800 dark:text-gray-200 placeholder:text-gray-400 dark:placeholder:text-gray-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition disabled:opacity-60"
           />
 
           {/* Error */}
@@ -216,7 +265,7 @@ export function AIDrawPanel() {
           {/* Footer */}
           <div className="mt-2.5 flex items-center justify-between gap-2">
             <span className="text-[11px] text-gray-400 dark:text-gray-500">
-              Enter to generate · Shift+Enter for new line
+              {mode === 'diagram' ? 'Ctrl+Enter to generate · Enter for new line' : 'Enter to generate · Shift+Enter for new line'}
             </span>
             <button
               onClick={handleGenerate}
@@ -229,12 +278,12 @@ export function AIDrawPanel() {
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
                     <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
                   </svg>
-                  Drawing…
+                  {mode === 'diagram' ? 'Analyzing…' : 'Drawing…'}
                 </>
               ) : (
                 <>
                   <SparklesIcon />
-                  Generate
+                  {mode === 'diagram' ? 'Generate Diagram' : 'Generate'}
                 </>
               )}
             </button>
@@ -251,8 +300,12 @@ export function AIDrawPanel() {
               <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
             </svg>
           </div>
-          <p className="text-[13px] font-medium text-gray-700 dark:text-gray-300">Generating your drawing…</p>
-          <p className="text-[11px] text-gray-400 dark:text-gray-500">This usually takes a few seconds</p>
+          <p className="text-[13px] font-medium text-gray-700 dark:text-gray-300">
+            {mode === 'diagram' ? 'Analyzing and building diagram…' : 'Generating your drawing…'}
+          </p>
+          <p className="text-[11px] text-gray-400 dark:text-gray-500">
+            {mode === 'diagram' ? 'Complex diagrams may take 10–20 seconds' : 'This usually takes a few seconds'}
+          </p>
         </div>
       )}
     </div>

@@ -11,6 +11,7 @@ interface HistoryStore {
   canUndo: () => boolean;
   canRedo: () => boolean;
   clear: () => void;
+  popState: () => void;
 }
 
 const MAX_HISTORY = 50;
@@ -21,7 +22,8 @@ export const useHistoryStore = create<HistoryStore>((set, get) => ({
 
   pushState: (elements) =>
     set((s) => ({
-      past: [...s.past.slice(-MAX_HISTORY), elements.map((e) => ({ ...e }))],
+      // Keep at most MAX_HISTORY entries including the one being pushed
+      past: [...s.past.slice(-(MAX_HISTORY - 1)), elements.map((e) => ({ ...e }))],
       future: [], // Clear redo stack on new action
     })),
 
@@ -50,4 +52,11 @@ export const useHistoryStore = create<HistoryStore>((set, get) => ({
   canUndo: () => get().past.length > 0,
   canRedo: () => get().future.length > 0,
   clear: () => set({ past: [], future: [] }),
+
+  /**
+   * Discard the most recent snapshot without applying it.
+   * Used when an interaction that pushed a snapshot turns out to be a
+   * no-op (e.g. a click that created a degenerate element that was pruned).
+   */
+  popState: () => set((s) => ({ past: s.past.slice(0, -1) })),
 }));

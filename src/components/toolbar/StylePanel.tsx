@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useToolStore } from '../../store/toolStore';
 import { useElementStore } from '../../store/elementStore';
+import { useHistoryStore } from '../../store/historyStore';
 import { COLOR_PALETTE, ROUGHNESS_LEVELS, STROKE_STYLES, FILL_STYLES, FONT_SIZES } from '../../constants';
 import type { StrokeStyle, FillStyle } from '../../types';
 
@@ -173,7 +174,16 @@ export function StylePanel() {
   const elements = useElementStore((s) => s.elements);
   const hasTextSelected = selectedIds.some((id) => elements.find((el) => el.id === id)?.type === 'text');
 
+  // Coalesce undo snapshots: rapid changes (e.g. dragging the opacity
+  // slider) produce one history entry instead of one per tick.
+  const lastSnapshotAtRef = useRef(0);
   const applyToSelected = (updates: Record<string, unknown>) => {
+    if (selectedIds.length === 0) return;
+    const now = Date.now();
+    if (now - lastSnapshotAtRef.current > 800) {
+      useHistoryStore.getState().pushState(useElementStore.getState().elements);
+    }
+    lastSnapshotAtRef.current = now;
     const { updateElement } = useElementStore.getState();
     for (const id of selectedIds) updateElement(id, updates);
   };

@@ -2,6 +2,14 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <!--
+      Content Security Policy (defense in depth):
+      - script 'unsafe-inline' is required by the SPA-redirect snippet below
+      - connect-src allows only the OpenAI API (AI Draw) + local dev HMR
+      - frame-src is broad because embeds are user-defined, but iframes are
+        sandboxed per-origin in the app (see urlSafety.ts)
+    -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src 'self' https://api.openai.com ws://localhost:*; frame-src https: http:; worker-src 'self' blob:; object-src 'none'; base-uri 'self'; form-action 'none'" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="manifest" href="/manifest.json" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />

@@ -48,13 +48,29 @@ function drawWithCache(
   for (const d of drawables) rc.draw(d);
 }
 
+// Image bitmap cache. Keys are full data-URLs (large!), so the cache is
+// capped — without a cap it grows unboundedly across canvases/sessions.
 const imageCache = new Map<string, HTMLImageElement>();
+const IMAGE_CACHE_MAX = 60;
+
+// Lets the canvas request a repaint when an image finishes decoding
+// (required now that the render loop skips clean frames).
+let imageLoadCallback: (() => void) | null = null;
+export function setImageLoadCallback(cb: (() => void) | null): void {
+  imageLoadCallback = cb;
+}
 
 function getCachedImage(src: string): HTMLImageElement | null {
   const cached = imageCache.get(src);
   if (cached) return cached;
   const img = new Image();
+  img.onload = () => { imageLoadCallback?.(); };
   img.src = src;
+  if (imageCache.size >= IMAGE_CACHE_MAX) {
+    // Evict oldest entry (insertion order)
+    const oldest = imageCache.keys().next().value;
+    if (oldest !== undefined) imageCache.delete(oldest);
+  }
   imageCache.set(src, img);
   return img.complete ? img : null;
 }

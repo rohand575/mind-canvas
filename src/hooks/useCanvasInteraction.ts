@@ -24,6 +24,12 @@ export function useCanvasInteraction() {
   }, []);
 
   const handleKeyDown = useCallback((e: KeyboardEvent) => {
+    // Don't hijack the space key while the user is typing in an
+    // input/textarea (find bar, rename fields, AI panel, text editor).
+    const target = e.target as HTMLElement;
+    if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+      return;
+    }
     if (e.code === 'Space' && !e.repeat) {
       isSpacePressed.current = true;
       useCanvasStore.getState().setIsPanning(true);

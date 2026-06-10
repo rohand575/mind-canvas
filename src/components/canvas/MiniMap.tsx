@@ -193,11 +193,25 @@ export function MiniMap() {
   useEffect(() => {
     if (collapsed) return;
     draw();
-    const unsubCanvas = useCanvasStore.subscribe(draw);
-    const unsubElements = useElementStore.subscribe(draw);
+    // rAF-coalesced redraw: store commits arrive in bursts (several per
+    // mousemove during drags) — redraw at most once per frame instead of
+    // synchronously on every commit.
+    let rafId = 0;
+    let pending = false;
+    const scheduleDraw = () => {
+      if (pending) return;
+      pending = true;
+      rafId = requestAnimationFrame(() => {
+        pending = false;
+        draw();
+      });
+    };
+    const unsubCanvas = useCanvasStore.subscribe(scheduleDraw);
+    const unsubElements = useElementStore.subscribe(scheduleDraw);
     return () => {
       unsubCanvas();
       unsubElements();
+      cancelAnimationFrame(rafId);
     };
   }, [draw, collapsed]);
 

@@ -8,6 +8,8 @@ interface ElementStore {
   setElements: (elements: CanvasElement[]) => void;
   addElement: (element: CanvasElement) => void;
   updateElement: (id: string, updates: Partial<CanvasElement>) => void;
+  /** Apply many updates in ONE store commit (one subscriber notification). */
+  updateElements: (updates: Map<string, Partial<CanvasElement>>) => void;
   removeElements: (ids: string[]) => void;
   duplicateElements: (ids: string[], offsetX?: number, offsetY?: number) => CanvasElement[];
   bringForward: (id: string) => void;
@@ -47,6 +49,20 @@ export const useElementStore = create<ElementStore>((set, get) => ({
       ),
     })),
 
+  // Batched variant: moving N selected elements previously caused N store
+  // commits per mousemove, each fanning out to every subscriber (render
+  // worker, minimap, autosave). This is one commit total.
+  updateElements: (updates) => {
+    if (updates.size === 0) return;
+    const now = Date.now();
+    set((s) => ({
+      elements: s.elements.map((el) => {
+        const u = updates.get(el.id);
+        return u ? { ...el, ...u, updatedAt: now } : el;
+      }),
+    }));
+  },
+
   removeElements: (ids) =>
     set((s) => ({
       elements: s.elements.filter((el) => !ids.includes(el.id)),
@@ -56,6 +72,10 @@ export const useElementStore = create<ElementStore>((set, get) => ({
     const { elements, getMaxZIndex } = get();
     let maxZ = getMaxZIndex();
     const toDuplicate = elements.filter((el) => ids.includes(el.id));
+    // Assign new ids up front so connector bindings can be remapped when
+    // the bound shape is duplicated together with the arrow.
+    const idMap = new Map<string, string>();
+    for (const el of toDuplicate) idMap.set(el.id, crypto.randomUUID());
     // Assign new groupIds when duplicating grouped elements
     const groupIdMap = new Map<string, string>();
     const duplicated = toDuplicate.map((el) => {
@@ -68,16 +88,21 @@ export const useElementStore = create<ElementStore>((set, get) => ({
         }
         newGroupId = groupIdMap.get(el.groupId);
       }
+      // Remap bindings into the duplicate set; clear them when the bound
+      // shape was not part of the duplication.
+      const remapBinding = (b: typeof el.startBinding) =>
+        b && idMap.has(b.elementId)
+          ? { elementId: idMap.get(b.elementId)!, point: b.point }
+          : undefined;
       return {
         ...el,
-        id: crypto.randomUUID(),
+        id: idMap.get(el.id)!,
         x: el.x + offsetX,
         y: el.y + offsetY,
         zIndex: maxZ,
         groupId: newGroupId,
-        // Clear bindings on duplicated arrows (they no longer reference valid shapes)
-        startBinding: undefined,
-        endBinding: undefined,
+        startBinding: remapBinding(el.startBinding),
+        endBinding: remapBinding(el.endBinding),
         createdAt: now,
         updatedAt: now,
       };

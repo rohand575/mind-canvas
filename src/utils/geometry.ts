@@ -68,10 +68,26 @@ export function hitTestElement(point: Point, element: CanvasElement, tolerance =
 
   if (element.type === 'line' || element.type === 'arrow') {
     if (!element.points || element.points.length < 2) return false;
-    // Check distance from point to line segment
     const p1 = { x: element.points[0].x + element.x, y: element.points[0].y + element.y };
     const p2 = { x: element.points[1].x + element.x, y: element.points[1].y + element.y };
-    return distanceToLineSegment(point, p1, p2) <= tolerance + element.strokeWidth;
+    const maxDist = tolerance + element.strokeWidth;
+
+    // Elbow connectors are rendered as 3 orthogonal segments routed through
+    // the horizontal midpoint — hit-test the actual drawn path, not the
+    // straight diagonal.
+    if (element.connectorStyle === 'elbow') {
+      const midX = (p1.x + p2.x) / 2;
+      const a = { x: midX, y: p1.y };
+      const b = { x: midX, y: p2.y };
+      return (
+        distanceToLineSegment(point, p1, a) <= maxDist ||
+        distanceToLineSegment(point, a, b) <= maxDist ||
+        distanceToLineSegment(point, b, p2) <= maxDist
+      );
+    }
+
+    // Straight connector: distance from point to the segment
+    return distanceToLineSegment(point, p1, p2) <= maxDist;
   }
 
   if (element.type === 'freehand' && element.points) {

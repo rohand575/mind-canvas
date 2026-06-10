@@ -62,6 +62,8 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
     const elements = useElementStore.getState().elements;
     const { offsetX, offsetY, zoom, theme, showGrid } = useCanvasStore.getState();
     const existing = get().canvasList.find((c) => c.id === canvasId);
+    // Canvas was deleted while a save was pending — do not write it back.
+    if (!existing) return;
     const now = Date.now();
 
     const thisSave = saveQueue.then(async () => {
@@ -92,7 +94,10 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
   },
 
   createCanvas: async (name) => {
-    if (get().currentCanvasId) {
+    // Same existence check as openCanvas: never re-save a canvas that was
+    // just deleted (createCanvas runs when the last canvas is removed).
+    const prevId = get().currentCanvasId;
+    if (prevId && get().canvasList.some((c) => c.id === prevId)) {
       await get().saveCurrentCanvas();
     }
 
@@ -122,7 +127,13 @@ export const useDocumentStore = create<DocumentStore>((set, get) => ({
   openCanvas: async (id) => {
     const prevId = get().currentCanvasId;
 
-    if (prevId && prevId !== id) {
+    // Only save the outgoing canvas if it still exists in the list.
+    // Without this check, deleting the current canvas would write it
+    // back to IndexedDB here ("ghost canvas" resurrection bug).
+    const prevStillExists =
+      prevId !== null && get().canvasList.some((c) => c.id === prevId);
+
+    if (prevId && prevId !== id && prevStillExists) {
       await get().saveCurrentCanvas();
     }
 

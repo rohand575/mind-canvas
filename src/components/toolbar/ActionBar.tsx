@@ -42,6 +42,7 @@ export function ActionBar() {
   const handleDelete = () => {
     const { selectedIds, clearSelection } = useToolStore.getState();
     if (selectedIds.length > 0) {
+      saveSnapshot();
       useElementStore.getState().removeElements(selectedIds);
       clearSelection();
     }
